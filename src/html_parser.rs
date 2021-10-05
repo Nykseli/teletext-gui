@@ -1,6 +1,15 @@
 use std::fs;
 use std::result::Result;
 
+extern crate html_escape;
+
+// TODO: is this fast enough or do we need to build our own?
+fn decode_string(string: &str) -> String {
+    let mut new_string = String::new();
+    html_escape::decode_html_entities_to_string(string, &mut new_string);
+    return new_string;
+}
+
 const TOP_NAVIGATION_SIZE: usize = 4;
 const BOTTOM_NAVIGATION_SIZE: usize = 6;
 // All links parsed from html document are 12 characters
@@ -115,7 +124,7 @@ impl<'a> TeleText<'a> {
         self.skip_next_string(">");
 
         let inner_end = self.current_text.find('<').unwrap();
-        let inner_text = self.current_text[..inner_end].to_string();
+        let inner_text = decode_string(&self.current_text[..inner_end]);
 
         self.skip_next_tag("a", true);
 
@@ -131,7 +140,7 @@ impl<'a> TeleText<'a> {
         self.skip_next_tag("big", false);
         // Text ends at the start of the next html tag
         let text_end = self.current_text.find('<').unwrap();
-        self.title = self.current_text[0..text_end].to_string();
+        self.title = decode_string(&self.current_text[0..text_end]);
     }
 
     /// Parse the top navigation par tof yle teletext page
@@ -171,8 +180,6 @@ impl<'a> TeleText<'a> {
         self.top_navigation = navigation;
     }
 
-    /// `row_ref` is the refence to the current line string
-    ///
     /// If the current link isn't a valid teletext link, this will Err
     /// and return a `HtmlText` instead of the `HtmlLink`
     fn parse_middle_link(&mut self) -> Result<HtmlLink, HtmlText> {
@@ -222,11 +229,11 @@ impl<'a> TeleText<'a> {
                         let link_start = self.current_text.find('<');
                         let row_str = if link_start.is_some() {
                             // link_start is some so we can unwrap it here safely
-                            self.current_text[..link_start.unwrap()].to_string()
+                            decode_string(&self.current_text[..link_start.unwrap()])
                         } else {
                             // If '<' is not found, the rest of the line
                             // is the string, since there are no more links
-                            self.current_text[..].to_string()
+                            decode_string(&self.current_text[..])
                         };
 
                         if link_start.is_some() {

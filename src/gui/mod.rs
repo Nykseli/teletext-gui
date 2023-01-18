@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::html_parser::{HtmlLoader, TeleText};
 
 mod yle_text;
@@ -60,5 +62,7 @@ impl eframe::App for TeleTextApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             yle_text::GuiYleText::new(ui).draw(page);
         });
+
+        ctx.request_repaint_after(Duration::from_millis(100));
     }
 }

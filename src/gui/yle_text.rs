@@ -30,10 +30,28 @@ pub struct GuiYleText<'a> {
 
 impl<'a> GuiYleText<'a> {
     fn draw_header(&mut self, title: &HtmlText) {
-        self.ui
-            .with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                ui.label(title.clone());
-            });
+        // align with page navigation
+        let chw = self.char_width;
+        let nav_length = chw * 69.0;
+        let nav_start = (self.panel_width / 2.0) - (nav_length / 2.0);
+        let page_len = chw * 4.0;
+        let time_len = chw * 15.0;
+        let title_len = (title.chars().count() as f32) * chw;
+
+        let title_space = (nav_length / 2.0) - (title_len / 2.0) - page_len;
+        let time_space = nav_length - title_space - page_len - title_len - time_len;
+
+        self.ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.add_space(nav_start);
+            // TODO: print current page
+            ui.label("P100");
+            ui.add_space(title_space);
+            ui.label(title.clone());
+            ui.add_space(time_space);
+            let now = chrono::Utc::now();
+            ui.label(now.format("%d.%m. %H:%M:%S").to_string());
+        });
     }
 
     fn draw_page_navigation(&mut self, navigation: &[HtmlItem]) {

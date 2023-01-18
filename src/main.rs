@@ -1,27 +1,15 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+
+mod gui;
 mod html_parser;
 
 fn main() {
-    let file = "100.htm";
-    let pobj = html_parser::HtmlLoader::new(&file);
+    tracing_subscriber::fmt::init();
 
-    let mut parser = html_parser::TeleText::new();
-    parser.parse(&pobj).unwrap();
-
-    println!("  {}", parser.title);
-
-    for row in parser.middle_rows {
-        print!("    ");
-        for html_item in row {
-            match html_item {
-                html_parser::HtmlItem::Text(text) => {
-                    print!("{}", text);
-                }
-                html_parser::HtmlItem::Link(link) => {
-                    print!("{}", link.inner_text);
-                }
-            }
-        }
-        println!();
-    }
-    println!();
+    let options = eframe::NativeOptions::default();
+    eframe::run_native(
+        "My egui App",
+        options,
+        Box::new(|cc| Box::new(gui::TeleTextApp::new(cc))),
+    );
 }

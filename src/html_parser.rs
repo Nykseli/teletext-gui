@@ -7,13 +7,15 @@ extern crate html_escape;
 fn decode_string(string: &str) -> String {
     let mut new_string = String::new();
     html_escape::decode_html_entities_to_string(string, &mut new_string);
-    return new_string;
+    new_string
 }
 
 const TOP_NAVIGATION_SIZE: usize = 4;
 const BOTTOM_NAVIGATION_SIZE: usize = 6;
 // All links parsed from html document are 12 characters
 const HTML_LINK_SIZE: usize = 12;
+/// The middle texts are always maximum of 39 characters
+pub const MIDDLE_TEXT_MAX_LEN: usize = 39;
 
 enum TagType {
     Unknown,
@@ -43,26 +45,26 @@ pub enum HtmlItem {
 
 /// Contains the fields of Yle telext site
 #[derive(Debug)]
-pub struct TeleText<'a> {
+pub struct TeleText {
     // TODO: since TeleText is going to live as long as the HtmlLoader ref
     //       we could make all the HtmlTexts to be &str to avoid heap allocs
     pub title: HtmlText,
-    pub top_navigation: Vec<HtmlItem>,
+    pub page_navigation: Vec<HtmlItem>,
     pub bottom_navigation: Vec<HtmlLink>,
     pub sub_pages: Vec<HtmlItem>,
     pub middle_rows: Vec<Vec<HtmlItem>>,
 
     // TODO: should this be part of `HTML_PARSER`
     /// The current slice of the `page_data` that we are currently parsing
-    current_text: &'a str,
+    current_text: String,
 }
 
-impl<'a> TeleText<'a> {
+impl TeleText {
     /// Get tag type in the current position
     fn get_tag_type(&self) -> TagType {
-        let mut html = self.current_text;
+        let mut html = &self.current_text[..];
 
-        if html.chars().nth(0).unwrap() == '<' {
+        if html.starts_with('<') {
             html = &html[1..];
         }
 
@@ -91,14 +93,14 @@ impl<'a> TeleText<'a> {
         let chr_start = self.current_text.find(chr).unwrap();
         let chr_end = chr_start + 1; // char is always + 1
         let slicer = &self.current_text[chr_end..];
-        self.current_text = slicer;
+        self.current_text = slicer.to_string();
     }
 
     fn skip_next_string(&mut self, string: &str) {
         let string_start = self.current_text.find(string).unwrap();
         let string_end = string_start + string.len();
         let slicer = &self.current_text[string_end..];
-        self.current_text = slicer;
+        self.current_text = slicer.to_string();
     }
 
     fn skip_next_tag(&mut self, tag: &str, closing: bool) {
@@ -128,10 +130,7 @@ impl<'a> TeleText<'a> {
 
         self.skip_next_tag("a", true);
 
-        HtmlLink {
-            url: url,
-            inner_text: inner_text,
-        }
+        HtmlLink { url, inner_text }
     }
 
     /// Parse the title part of yle teletext page
@@ -177,7 +176,7 @@ impl<'a> TeleText<'a> {
             }
         }
 
-        self.top_navigation = navigation;
+        self.page_navigation = navigation;
     }
 
     /// If the current link isn't a valid teletext link, this will Err
@@ -198,21 +197,21 @@ impl<'a> TeleText<'a> {
         while !self.current_text.starts_with("</pre>") {
             let mut row: Vec<HtmlItem> = Vec::new();
             // ref the current string
-            let parse_text = self.current_text;
+            let parse_text = &self.current_text.clone()[..];
             // each middle row is in a regular line so lets find the new line
             // so we can now the size of it, so we can skip the line after parsing
             let line_len = self.current_text.find('\r').unwrap();
             // Temporarly ref the current text as the row_text we're parsing
-            self.current_text = &self.current_text[..line_len];
+            self.current_text = self.current_text[..line_len].to_string();
 
             // lines that start with '&' don't actualy contain any text
-            if parse_text.len() == 0 || parse_text.starts_with('&') {
+            if parse_text.is_empty() || parse_text.starts_with('&') {
                 middle_rows.push(row);
-                self.current_text = &parse_text[line_len + 2..]; // +2 for "\r\n"
+                self.current_text = parse_text[line_len + 2..].to_string(); // +2 for "\r\n"
                 continue;
             }
 
-            while self.current_text.len() > 0 {
+            while !self.current_text.is_empty() {
                 match self.get_tag_type() {
                     TagType::Link => match self.parse_middle_link() {
                         Ok(link) => {
@@ -227,19 +226,19 @@ impl<'a> TeleText<'a> {
                         // it's not a link, parse it as a text
 
                         let link_start = self.current_text.find('<');
-                        let row_str = if link_start.is_some() {
+                        let row_str = if let Some(start) = link_start {
                             // link_start is some so we can unwrap it here safely
-                            decode_string(&self.current_text[..link_start.unwrap()])
+                            decode_string(&self.current_text[..start])
                         } else {
                             // If '<' is not found, the rest of the line
                             // is the string, since there are no more links
                             decode_string(&self.current_text[..])
                         };
 
-                        if link_start.is_some() {
-                            self.current_text = &self.current_text[link_start.unwrap()..];
+                        if let Some(start) = link_start {
+                            self.current_text = self.current_text[start..].to_string();
                         } else {
-                            self.current_text = "";
+                            self.current_text = "".to_string();
                         }
 
                         row.push(HtmlItem::Text(row_str));
@@ -250,7 +249,7 @@ impl<'a> TeleText<'a> {
             // Pushed the crated row and make the text refer
             // to the whole document again
             middle_rows.push(row);
-            self.current_text = &parse_text[line_len + 2..]; // +2 for "\r\n"
+            self.current_text = parse_text[line_len + 2..].to_string(); // +2 for "\r\n"
         }
 
         self.middle_rows = middle_rows;
@@ -273,7 +272,7 @@ impl<'a> TeleText<'a> {
                     let link_start = self.current_text.find('<').unwrap();
                     let row_str = self.current_text[..link_start].to_string();
                     sub_pages.push(HtmlItem::Text(row_str));
-                    self.current_text = &self.current_text[link_start..];
+                    self.current_text = self.current_text[link_start..].to_string();
                 }
             }
         }
@@ -292,8 +291,8 @@ impl<'a> TeleText<'a> {
         self.bottom_navigation = links;
     }
 
-    pub fn parse(&mut self, loader: &'a HtmlLoader) -> Result<(), String> {
-        self.current_text = &loader.page_data[..];
+    pub fn parse(&mut self, loader: HtmlLoader) -> Result<(), String> {
+        self.current_text = loader.page_data;
         self.parse_title();
         self.parse_top_navigation();
         self.parse_middle();
@@ -303,14 +302,14 @@ impl<'a> TeleText<'a> {
         Ok(())
     }
 
-    pub fn new() -> TeleText<'a> {
+    pub fn new() -> TeleText {
         TeleText {
             title: "".to_string(),
-            top_navigation: vec![],
+            page_navigation: vec![],
             bottom_navigation: vec![],
             sub_pages: vec![],
             middle_rows: vec![],
-            current_text: "",
+            current_text: "".to_string(),
         }
     }
 }
@@ -322,7 +321,7 @@ pub struct HtmlLoader {
 
 impl HtmlLoader {
     pub fn new(file: &str) -> HtmlLoader {
-        let data = fs::read_to_string(file).expect(&format!("Can't find \"{}\"", file));
+        let data = fs::read_to_string(file).unwrap_or_else(|_| panic!("Can't find \"{}\"", file));
 
         HtmlLoader { page_data: data }
     }

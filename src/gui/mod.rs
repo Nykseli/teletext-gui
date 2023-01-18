@@ -18,7 +18,7 @@ impl TeleTextApp {
         let mut fonts = egui::FontDefinitions::empty();
         fonts.font_data.insert(
             "default_font".to_owned(),
-            egui::FontData::from_static(include_bytes!("../../DroidSansMono.ttf")),
+            egui::FontData::from_static(include_bytes!("../../DejaVuSansMono.ttf")),
         );
 
         fonts

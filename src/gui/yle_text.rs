@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::html_parser::{HtmlItem, HtmlLink, HtmlLoader, HtmlText, TeleText, MIDDLE_TEXT_MAX_LEN};
-use egui::TextStyle;
+use egui::{FontId, RichText, TextStyle};
 
 impl HtmlItem {
     fn add_to_ui(&self, ui: &mut egui::Ui, ctx: Rc<RefCell<&mut GuiYleTextContext>>) {
@@ -36,10 +36,29 @@ struct GuiYleText<'a> {
     ctx: Rc<RefCell<&'a mut GuiYleTextContext>>,
     panel_width: f32,
     char_width: f32,
+    is_small: bool,
 }
 
 impl<'a> GuiYleText<'a> {
-    fn draw_header(&mut self, title: &HtmlText) {
+    fn draw_header_small(&mut self, title: &HtmlText) {
+        // align with page navigation
+        let chw = self.char_width;
+        let page_len = chw * 4.0;
+
+        let title_len = (title.chars().count() as f32) * chw;
+
+        let title_space = (self.panel_width / 2.0) - (title_len / 2.0) - page_len;
+
+        self.ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            // TODO: print current page
+            ui.label("P100");
+            ui.add_space(title_space);
+            ui.label(title.clone());
+        });
+    }
+
+    fn draw_header_normal(&mut self, title: &HtmlText) {
         // align with page navigation
         let chw = self.char_width;
         let nav_length = chw * 69.0;
@@ -64,8 +83,54 @@ impl<'a> GuiYleText<'a> {
         });
     }
 
-    fn draw_page_navigation(&mut self, navigation: &[HtmlItem]) {
-        // "Edellinen sivu | Edellinen alasivu | Seuraava alasivu | Seuraava sivu" is 69 chars
+    fn draw_header(&mut self, title: &HtmlText) {
+        if self.is_small {
+            self.draw_header_small(title);
+        } else {
+            self.draw_header_normal(title);
+        }
+    }
+
+    fn draw_page_navigation_small(&mut self, navigation: &[HtmlItem]) {
+        let mut body_font = TextStyle::Body.resolve(self.ui.style());
+        body_font.size *= 3.0;
+        let arrow_width = self.ui.fonts().glyph_width(&body_font, 'W');
+        let chars_len = arrow_width * 4.0 + self.char_width * 9.0;
+        let page_nav_start = (self.panel_width / 2.0) - (chars_len / 2.0);
+        let ctx = &self.ctx;
+        self.ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.add_space(page_nav_start);
+            for (idx, item) in navigation.iter().enumerate() {
+                let icon = match idx {
+                    0 => "←",
+                    1 => "↑",
+                    2 => "↓",
+                    3 => "→",
+                    _ => "?",
+                };
+
+                let icon_text = RichText::new(icon).font(FontId::monospace(body_font.size));
+                match item {
+                    HtmlItem::Link(link) => {
+                        if ui.link(icon_text).clicked() {
+                            ctx.borrow_mut().load_page(&link.url);
+                        };
+                    }
+                    HtmlItem::Text(_) => {
+                        ui.label(icon_text);
+                    }
+                }
+
+                if idx < 3 {
+                    ui.label(" | ");
+                }
+            }
+        });
+    }
+
+    fn draw_page_navigation_normal(&mut self, navigation: &[HtmlItem]) {
+        // "Edellinen sivu | Edellinen alasivu | Seuraava alasivu | Seuraava sivu" is 69 char
         let page_nav_start = (self.panel_width / 2.0) - (self.char_width * 69.0 / 2.0);
         let ctx = &self.ctx;
         self.ui.horizontal(|ui| {
@@ -78,6 +143,14 @@ impl<'a> GuiYleText<'a> {
                 }
             }
         });
+    }
+
+    fn draw_page_navigation(&mut self, navigation: &[HtmlItem]) {
+        if self.is_small {
+            self.draw_page_navigation_small(navigation);
+        } else {
+            self.draw_page_navigation_normal(navigation);
+        }
     }
 
     fn draw_middle(&mut self, rows: &Vec<Vec<HtmlItem>>) {
@@ -108,8 +181,20 @@ impl<'a> GuiYleText<'a> {
         });
     }
 
-    fn draw_bottom_navigation(&mut self, navigation: &[HtmlLink]) {
-        // "Kotimaa | Ulkomaat | Talous | Urheilu | Svenska sidor | Teksti-TV" is 88 chars
+    fn draw_bottom_navigation_small(&mut self, navigation: &[HtmlLink]) {
+        // "Teksti-TV" is 9 chars
+        let page_nav_start = (self.panel_width / 2.0) - (self.char_width * 9.0 / 2.0);
+        let ctx = &self.ctx;
+        self.ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.add_space(page_nav_start);
+            let link = navigation.last().unwrap();
+            link.add_to_ui(ui, ctx.clone());
+        });
+    }
+
+    fn draw_bottom_navigation_normal(&mut self, navigation: &[HtmlLink]) {
+        // "Kotimaa | Ulkomaat | Talous | Urheilu | Svenska sidor | Teksti-TV" is 65 chars
         let page_nav_start = (self.panel_width / 2.0) - (self.char_width * 65.0 / 2.0);
         let ctx = &self.ctx;
         self.ui.horizontal(|ui| {
@@ -122,6 +207,14 @@ impl<'a> GuiYleText<'a> {
                 }
             }
         });
+    }
+
+    fn draw_bottom_navigation(&mut self, navigation: &[HtmlLink]) {
+        if self.is_small {
+            self.draw_bottom_navigation_small(navigation);
+        } else {
+            self.draw_bottom_navigation_normal(navigation);
+        }
     }
 
     pub fn draw(&mut self) {
@@ -143,12 +236,16 @@ impl<'a> GuiYleText<'a> {
         let panel_width = ui.available_width();
         let body_font = TextStyle::Body.resolve(ui.style());
         let char_width = ui.fonts().glyph_width(&body_font, 'W');
+        // Aligned with page navigation
+        let nav_len = char_width * 69.0;
+        let is_small = nav_len + 4.0 > panel_width;
 
         Self {
             ui,
             ctx: Rc::new(RefCell::new(ctx)),
             char_width,
             panel_width,
+            is_small,
         }
     }
 }

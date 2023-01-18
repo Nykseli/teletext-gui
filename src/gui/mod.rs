@@ -1,16 +1,14 @@
 use std::time::Duration;
 
-use crate::html_parser::{HtmlLoader, TeleText};
-
 mod yle_text;
+use self::yle_text::GuiYleTextContext;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(Default, serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct TeleTextApp {
-    // TODO: Result with actual error information like failed download etc
     #[serde(skip)]
-    page_text: Option<TeleText>,
+    page: Option<GuiYleTextContext>,
 }
 
 impl TeleTextApp {
@@ -37,14 +35,8 @@ impl TeleTextApp {
 
         ctx.egui_ctx.set_fonts(fonts);
 
-        // Load test page
-        let file = "101.htm";
-        let pobj = HtmlLoader::new(file);
-        let mut parser = TeleText::new();
-        parser.parse(pobj).unwrap();
-
         Self {
-            page_text: Some(parser),
+            page: Some(GuiYleTextContext::new(ctx.egui_ctx.clone())),
         }
     }
 }
@@ -56,11 +48,12 @@ impl eframe::App for TeleTextApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let Self { page_text } = self;
-        let page = page_text.as_ref().unwrap();
+        let Self { page } = self;
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            yle_text::GuiYleText::new(ui).draw(page);
+            if let Some(page) = page {
+                page.draw(ui);
+            }
         });
 
         ctx.request_repaint_after(Duration::from_millis(100));

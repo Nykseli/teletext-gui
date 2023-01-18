@@ -316,7 +316,7 @@ impl TeleText {
 
 #[derive(Debug)]
 pub struct HtmlLoader {
-    page_data: String,
+    pub page_data: String,
 }
 
 impl HtmlLoader {

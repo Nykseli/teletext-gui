@@ -7,7 +7,9 @@ use std::{
 };
 
 use crate::html_parser::{HtmlItem, HtmlLink, HtmlLoader, HtmlText, TeleText, MIDDLE_TEXT_MAX_LEN};
-use egui::{FontId, RichText, TextStyle};
+use egui::{FontId, InputState, RichText, TextStyle};
+
+use super::common::input_to_num;
 
 impl HtmlItem {
     fn add_to_ui(&self, ui: &mut egui::Ui, ctx: Rc<RefCell<&mut GuiYleTextContext>>) {
@@ -40,19 +42,32 @@ struct GuiYleText<'a> {
 }
 
 impl<'a> GuiYleText<'a> {
+    fn get_page_str(&self) -> String {
+        let page_buf = &self.ctx.borrow().page_buffer;
+        let page_num = if !page_buf.is_empty() {
+            let mut page_str = "---".as_bytes().to_vec();
+            for (idx, num) in page_buf.iter().enumerate() {
+                page_str[idx] = b'0' + (*num as u8);
+            }
+            String::from_utf8(page_str.to_vec()).unwrap()
+        } else {
+            self.ctx.borrow().current_page.to_string()
+        };
+
+        format!("P{}", page_num)
+    }
+
     fn draw_header_small(&mut self, title: &HtmlText) {
         // align with page navigation
         let chw = self.char_width;
         let page_len = chw * 4.0;
-
         let title_len = (title.chars().count() as f32) * chw;
-
         let title_space = (self.panel_width / 2.0) - (title_len / 2.0) - page_len;
+        let page = self.get_page_str();
 
         self.ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
-            // TODO: print current page
-            ui.label("P100");
+            ui.label(page);
             ui.add_space(title_space);
             ui.label(title.clone());
         });
@@ -70,11 +85,12 @@ impl<'a> GuiYleText<'a> {
         let title_space = (nav_length / 2.0) - (title_len / 2.0) - page_len;
         let time_space = nav_length - title_space - page_len - title_len - time_len;
 
+        let page = self.get_page_str();
+
         self.ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             ui.add_space(nav_start);
-            // TODO: print current page
-            ui.label("P100");
+            ui.label(page);
             ui.add_space(title_space);
             ui.label(title.clone());
             ui.add_space(time_space);
@@ -262,6 +278,8 @@ enum FetchState {
 pub struct GuiYleTextContext {
     egui: egui::Context,
     state: Arc<Mutex<FetchState>>,
+    current_page: i32,
+    page_buffer: Vec<i32>,
 }
 
 impl GuiYleTextContext {
@@ -275,6 +293,22 @@ impl GuiYleTextContext {
         Self {
             egui,
             state: Arc::new(Mutex::new(FetchState::Complete(parser))),
+            current_page: 100,
+            page_buffer: Vec::with_capacity(3),
+        }
+    }
+
+    pub fn handle_input(&mut self, input: &InputState) {
+        if let Some(num) = input_to_num(input) {
+            if self.page_buffer.len() < 3 {
+                self.page_buffer.push(num);
+            }
+
+            if self.page_buffer.len() == 3 {
+                self.current_page = self.page_buffer.iter().fold(0, |acum, val| acum * 10 + val);
+                self.page_buffer.clear();
+                self.load_current_page();
+            }
         }
     }
 
@@ -282,10 +316,17 @@ impl GuiYleTextContext {
         GuiYleText::new(ui, self).draw();
     }
 
+    pub fn load_current_page(&mut self) {
+        // TODO: sub_pages
+        let page = format!("{}_0001.htm", self.current_page);
+        self.load_page(&page);
+    }
+
     pub fn load_page(&mut self, page: &str) {
         let ctx = self.egui.clone();
         let state = self.state.clone();
         let page = page.to_string();
+        self.current_page = page[0..3].parse::<i32>().unwrap();
 
         thread::spawn(move || {
             let site = &format!("https://yle.fi/tekstitv/txt/{}", page);

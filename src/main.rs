@@ -8,7 +8,7 @@ fn main() {
 
     let options = eframe::NativeOptions::default();
     eframe::run_native(
-        "My egui App",
+        "Teletext Reader",
         options,
         Box::new(|cc| Box::new(gui::TeleTextApp::new(cc))),
     );

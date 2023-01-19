@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+mod common;
 mod yle_text;
 use self::yle_text::GuiYleTextContext;
 
@@ -50,8 +51,12 @@ impl eframe::App for TeleTextApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let Self { page } = self;
 
+        // .input() locks ctx so we need to copy the data to avoid locks
+        let input = ctx.input().to_owned();
+
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(page) = page {
+                page.handle_input(&input);
                 page.draw(ui);
             }
         });

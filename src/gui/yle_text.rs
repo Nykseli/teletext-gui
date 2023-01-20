@@ -85,6 +85,17 @@ impl TeleHistory {
         None
     }
 
+    // Go to previous page and truncate the current history
+    fn prev_trunc(&mut self) -> Option<TelePage> {
+        if self.current > 0 {
+            self.pages.truncate(self.current);
+            self.current -= 1;
+            return Some(*self.pages.get(self.current).unwrap());
+        }
+
+        None
+    }
+
     fn next(&mut self) -> Option<TelePage> {
         if self.current < self.pages.len() - 1 {
             self.current += 1;
@@ -296,17 +307,44 @@ impl<'a> GuiYleText<'a> {
     }
 
     pub fn draw(&mut self) {
+        let ctx = &self.ctx;
         let state = self.ctx.borrow().state.clone();
 
         // TODO: draw all states
-        if let FetchState::Complete(page) = state.lock().unwrap().deref() {
-            self.draw_header(&page.title);
-            self.draw_page_navigation(&page.page_navigation);
-            self.draw_middle(&page.middle_rows);
-            self.draw_sub_pages(&page.sub_pages);
-            self.ui.label("\n");
-            self.draw_page_navigation(&page.page_navigation);
-            self.draw_bottom_navigation(&page.bottom_navigation);
+        match state.lock().unwrap().deref() {
+            FetchState::Complete(page) => {
+                self.draw_header(&page.title);
+                self.draw_page_navigation(&page.page_navigation);
+                self.draw_middle(&page.middle_rows);
+                self.draw_sub_pages(&page.sub_pages);
+                self.ui.label("\n");
+                self.draw_page_navigation(&page.page_navigation);
+                self.draw_bottom_navigation(&page.bottom_navigation);
+            }
+            FetchState::Fetching | FetchState::Init => {
+                self.ui
+                    .with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                        ui.label("Loading...");
+                    });
+            }
+            FetchState::Error => {
+                self.ui
+                    .with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                        ui.label("Load failed...");
+                        if ui.link("Return to previous page").clicked() {
+                            ctx.borrow_mut().return_from_error_page();
+                        }
+                    });
+            }
+            FetchState::InitFailed => {
+                self.ui
+                    .with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                        ui.label("Load failed...");
+                        if ui.link("Try again").clicked() {
+                            ctx.borrow_mut().load_current_page();
+                        }
+                    });
+            }
         };
     }
 
@@ -330,10 +368,11 @@ impl<'a> GuiYleText<'a> {
 
 enum FetchState {
     /// No fetch has been done, so the state is uninitialised
-    // Uninit,
+    Init,
+    InitFailed,
     Fetching,
     // TODO: error codes
-    // Error,
+    Error,
     Complete(TeleText),
 }
 
@@ -350,14 +389,17 @@ impl GuiYleTextContext {
         // Load test page
         let file = "101.htm";
         let pobj = HtmlLoader::new(file);
-        let mut parser = TeleText::new();
-        parser.parse(pobj).unwrap();
+        let parser = TeleText::new();
+        let state = match parser.parse(pobj) {
+            Ok(parser) => FetchState::Complete(parser),
+            Err(_) => FetchState::InitFailed,
+        };
         let current_page = TelePage::new(100, 1);
 
         Self {
             egui,
             current_page,
-            state: Arc::new(Mutex::new(FetchState::Complete(parser))),
+            state: Arc::new(Mutex::new(state)),
             page_buffer: Vec::with_capacity(3),
             history: TeleHistory::new(current_page),
         }
@@ -365,9 +407,10 @@ impl GuiYleTextContext {
 
     pub fn handle_input(&mut self, input: &InputState) {
         // Ignore input while fetching
-        if let FetchState::Fetching = *self.state.lock().unwrap() {
-            return;
-        }
+        match *self.state.lock().unwrap() {
+            FetchState::Complete(_) => {}
+            _ => return,
+        };
 
         if let Some(num) = input_to_num(input) {
             if self.page_buffer.len() < 3 {
@@ -402,6 +445,13 @@ impl GuiYleTextContext {
         GuiYleText::new(ui, self).draw();
     }
 
+    pub fn return_from_error_page(&mut self) {
+        if let Some(page) = self.history.prev_trunc() {
+            self.current_page = page;
+            self.load_current_page();
+        }
+    }
+
     pub fn load_current_page(&mut self) {
         let page = self.current_page.to_page_str();
         self.load_page(&page, false);
@@ -418,21 +468,36 @@ impl GuiYleTextContext {
         }
 
         thread::spawn(move || {
+            let is_init = matches!(
+                *state.lock().unwrap(),
+                FetchState::Init | FetchState::InitFailed
+            );
+
             *state.lock().unwrap() = FetchState::Fetching;
             let site = &format!("https://yle.fi/tekstitv/txt/{}", page);
             log::info!("Load page: {}", site);
-            let body = match reqwest::blocking::get(site) {
-                Err(err) => panic!("{:#?}", err),
-                Ok(body) => body,
+            let new_state = match Self::fetch_page(site) {
+                Ok(parser) => FetchState::Complete(parser),
+                Err(_) => {
+                    if is_init {
+                        FetchState::InitFailed
+                    } else {
+                        FetchState::Error
+                    }
+                }
             };
-            let body = match body.text() {
-                Err(err) => panic!("{:#?}", err),
-                Ok(body) => body,
-            };
-            let mut parser = TeleText::new();
-            parser.parse(HtmlLoader { page_data: body }).unwrap();
-            *state.lock().unwrap() = FetchState::Complete(parser);
+
+            *state.lock().unwrap() = new_state;
             ctx.request_repaint();
         });
+    }
+
+    fn fetch_page(site: &str) -> Result<TeleText, ()> {
+        let body = reqwest::blocking::get(site).map_err(|_| ())?;
+        let body = body.text().map_err(|_| ())?;
+        let teletext = TeleText::new()
+            .parse(HtmlLoader { page_data: body })
+            .map_err(|_| ())?;
+        Ok(teletext)
     }
 }

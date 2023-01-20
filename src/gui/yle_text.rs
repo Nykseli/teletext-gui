@@ -28,11 +28,12 @@ impl HtmlLink {
     fn add_to_ui(&self, ui: &mut egui::Ui, ctx: Rc<RefCell<&mut GuiYleTextContext>>) {
         if ui.link(&self.inner_text).clicked() {
             println!("Clicked {}", self.url);
-            ctx.borrow_mut().load_page(&self.url);
+            ctx.borrow_mut().load_page(&self.url, true);
         }
     }
 }
 
+#[derive(Clone, Copy)]
 struct TelePage {
     page: i32,
     sub_page: i32,
@@ -50,8 +51,47 @@ impl TelePage {
         Self::new(current_page, sub_page)
     }
 
-    fn to_page_str(&self) -> String {
+    fn to_page_str(self) -> String {
         format!("{}_{:04}.htm", self.page, self.sub_page)
+    }
+}
+
+struct TeleHistory {
+    pages: Vec<TelePage>,
+    current: usize,
+}
+
+impl TeleHistory {
+    fn new(first_page: TelePage) -> Self {
+        Self {
+            pages: vec![first_page],
+            current: 0,
+        }
+    }
+
+    /// Trucks current history to the current page
+    fn add(&mut self, page: TelePage) {
+        self.current += 1;
+        self.pages.truncate(self.current);
+        self.pages.push(page);
+    }
+
+    fn prev(&mut self) -> Option<TelePage> {
+        if self.current > 0 {
+            self.current -= 1;
+            return Some(*self.pages.get(self.current).unwrap());
+        }
+
+        None
+    }
+
+    fn next(&mut self) -> Option<TelePage> {
+        if self.current < self.pages.len() - 1 {
+            self.current += 1;
+            return Some(*self.pages.get(self.current).unwrap());
+        }
+
+        None
     }
 }
 
@@ -152,7 +192,7 @@ impl<'a> GuiYleText<'a> {
                 match item {
                     HtmlItem::Link(link) => {
                         if ui.link(icon_text).clicked() {
-                            ctx.borrow_mut().load_page(&link.url);
+                            ctx.borrow_mut().load_page(&link.url, true);
                         };
                     }
                     HtmlItem::Text(_) => {
@@ -291,7 +331,7 @@ impl<'a> GuiYleText<'a> {
 enum FetchState {
     /// No fetch has been done, so the state is uninitialised
     // Uninit,
-    // Fetching,
+    Fetching,
     // TODO: error codes
     // Error,
     Complete(TeleText),
@@ -301,6 +341,7 @@ pub struct GuiYleTextContext {
     egui: egui::Context,
     state: Arc<Mutex<FetchState>>,
     current_page: TelePage,
+    history: TeleHistory,
     page_buffer: Vec<i32>,
 }
 
@@ -311,16 +352,23 @@ impl GuiYleTextContext {
         let pobj = HtmlLoader::new(file);
         let mut parser = TeleText::new();
         parser.parse(pobj).unwrap();
+        let current_page = TelePage::new(100, 1);
 
         Self {
             egui,
+            current_page,
             state: Arc::new(Mutex::new(FetchState::Complete(parser))),
-            current_page: TelePage::new(100, 1),
             page_buffer: Vec::with_capacity(3),
+            history: TeleHistory::new(current_page),
         }
     }
 
     pub fn handle_input(&mut self, input: &InputState) {
+        // Ignore input while fetching
+        if let FetchState::Fetching = *self.state.lock().unwrap() {
+            return;
+        }
+
         if let Some(num) = input_to_num(input) {
             if self.page_buffer.len() < 3 {
                 self.page_buffer.push(num);
@@ -328,8 +376,23 @@ impl GuiYleTextContext {
 
             if self.page_buffer.len() == 3 {
                 let page_num = self.page_buffer.iter().fold(0, |acum, val| acum * 10 + val);
-                self.current_page = TelePage::new(page_num, 1);
                 self.page_buffer.clear();
+                self.load_page(&TelePage::new(page_num, 1).to_page_str(), true);
+            }
+        }
+
+        // prev
+        if input.pointer.button_released(egui::PointerButton::Extra1) {
+            if let Some(page) = self.history.prev() {
+                self.current_page = page;
+                self.load_current_page();
+            }
+        }
+
+        // next
+        if input.pointer.button_released(egui::PointerButton::Extra2) {
+            if let Some(page) = self.history.next() {
+                self.current_page = page;
                 self.load_current_page();
             }
         }
@@ -340,18 +403,22 @@ impl GuiYleTextContext {
     }
 
     pub fn load_current_page(&mut self) {
-        // TODO: sub_pages
         let page = self.current_page.to_page_str();
-        self.load_page(&page);
+        self.load_page(&page, false);
     }
 
-    pub fn load_page(&mut self, page: &str) {
+    pub fn load_page(&mut self, page: &str, add_to_history: bool) {
         let ctx = self.egui.clone();
         let state = self.state.clone();
-        self.current_page = TelePage::from_page_str(page);
         let page = page.to_string();
 
+        self.current_page = TelePage::from_page_str(&page);
+        if add_to_history {
+            self.history.add(self.current_page)
+        }
+
         thread::spawn(move || {
+            *state.lock().unwrap() = FetchState::Fetching;
             let site = &format!("https://yle.fi/tekstitv/txt/{}", page);
             log::info!("Load page: {}", site);
             let body = match reqwest::blocking::get(site) {

@@ -11,5 +11,6 @@ fn main() {
         "Teletext Reader",
         options,
         Box::new(|cc| Box::new(gui::TeleTextApp::new(cc))),
-    );
+    )
+    .unwrap();
 }

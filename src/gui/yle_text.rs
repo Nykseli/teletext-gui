@@ -33,6 +33,28 @@ impl HtmlLink {
     }
 }
 
+struct TelePage {
+    page: i32,
+    sub_page: i32,
+}
+
+impl TelePage {
+    fn new(page: i32, sub_page: i32) -> Self {
+        Self { page, sub_page }
+    }
+
+    fn from_page_str(page: &str) -> Self {
+        let current_page = page[0..3].parse::<i32>().unwrap();
+        let sub_page = page[4..8].parse::<i32>().unwrap();
+
+        Self::new(current_page, sub_page)
+    }
+
+    fn to_page_str(&self) -> String {
+        format!("{}_{:04}.htm", self.page, self.sub_page)
+    }
+}
+
 struct GuiYleText<'a> {
     ui: &'a mut egui::Ui,
     ctx: Rc<RefCell<&'a mut GuiYleTextContext>>,
@@ -51,7 +73,7 @@ impl<'a> GuiYleText<'a> {
             }
             String::from_utf8(page_str.to_vec()).unwrap()
         } else {
-            self.ctx.borrow().current_page.to_string()
+            self.ctx.borrow().current_page.page.to_string()
         };
 
         format!("P{}", page_num)
@@ -278,7 +300,7 @@ enum FetchState {
 pub struct GuiYleTextContext {
     egui: egui::Context,
     state: Arc<Mutex<FetchState>>,
-    current_page: i32,
+    current_page: TelePage,
     page_buffer: Vec<i32>,
 }
 
@@ -293,7 +315,7 @@ impl GuiYleTextContext {
         Self {
             egui,
             state: Arc::new(Mutex::new(FetchState::Complete(parser))),
-            current_page: 100,
+            current_page: TelePage::new(100, 1),
             page_buffer: Vec::with_capacity(3),
         }
     }
@@ -305,7 +327,8 @@ impl GuiYleTextContext {
             }
 
             if self.page_buffer.len() == 3 {
-                self.current_page = self.page_buffer.iter().fold(0, |acum, val| acum * 10 + val);
+                let page_num = self.page_buffer.iter().fold(0, |acum, val| acum * 10 + val);
+                self.current_page = TelePage::new(page_num, 1);
                 self.page_buffer.clear();
                 self.load_current_page();
             }
@@ -318,15 +341,15 @@ impl GuiYleTextContext {
 
     pub fn load_current_page(&mut self) {
         // TODO: sub_pages
-        let page = format!("{}_0001.htm", self.current_page);
+        let page = self.current_page.to_page_str();
         self.load_page(&page);
     }
 
     pub fn load_page(&mut self, page: &str) {
         let ctx = self.egui.clone();
         let state = self.state.clone();
+        self.current_page = TelePage::from_page_str(page);
         let page = page.to_string();
-        self.current_page = page[0..3].parse::<i32>().unwrap();
 
         thread::spawn(move || {
             let site = &format!("https://yle.fi/tekstitv/txt/{}", page);

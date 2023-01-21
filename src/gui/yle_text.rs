@@ -322,7 +322,7 @@ impl<'a> GuiYleText<'a> {
                 self.draw_page_navigation(&page.page_navigation);
                 self.draw_bottom_navigation(&page.bottom_navigation);
             }
-            FetchState::Fetching | FetchState::Init => {
+            FetchState::Fetching => {
                 self.ui
                     .with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
                         ui.label("Loading...");
@@ -345,6 +345,13 @@ impl<'a> GuiYleText<'a> {
                             ctx.borrow_mut().load_current_page();
                         }
                     });
+            }
+            FetchState::Init => {
+                self.ui
+                    .with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                        ui.label("Opening...");
+                    });
+                ctx.borrow_mut().load_current_page();
             }
         };
     }
@@ -388,20 +395,12 @@ pub struct GuiYleTextContext {
 
 impl GuiYleTextContext {
     pub fn new(egui: egui::Context) -> Self {
-        // Load test page
-        let file = "101.htm";
-        let pobj = HtmlLoader::new(file);
-        let parser = TeleText::new();
-        let state = match parser.parse(pobj) {
-            Ok(parser) => FetchState::Complete(parser),
-            Err(_) => FetchState::InitFailed,
-        };
         let current_page = TelePage::new(100, 1);
 
         Self {
             egui,
             current_page,
-            state: Arc::new(Mutex::new(state)),
+            state: Arc::new(Mutex::new(FetchState::Init)),
             page_buffer: Vec::with_capacity(3),
             history: TeleHistory::new(current_page),
             worker: None,

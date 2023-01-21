@@ -341,6 +341,7 @@ pub struct HtmlLoader {
 }
 
 impl HtmlLoader {
+    #[allow(dead_code)]
     pub fn new(file: &str) -> HtmlLoader {
         let data = fs::read_to_string(file).unwrap_or_else(|_| panic!("Can't find \"{}\"", file));
 

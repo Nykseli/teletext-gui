@@ -29,6 +29,79 @@ struct TeleTextSettings {
     refresh_interval: OptionSetting<u64>,
 }
 
+impl TeleTextSettings {
+    /// Initialize all settings, should be used when app is initalised
+    fn init_all(&self, ctx: &egui::Context, page: &mut GuiYleTextContext) {
+        self.set_colors(ctx);
+        self.set_font_size(ctx);
+        self.set_refresh_interval(page);
+    }
+
+    fn set_colors(&self, ctx: &egui::Context) {
+        let mut visuals = (*ctx.style()).clone().visuals;
+        let defaults = Style::default().visuals;
+
+        let c = &self.link_color;
+        visuals.hyperlink_color = if c.is_used {
+            Color32::from_rgb(c.value[0], c.value[1], c.value[2])
+        } else {
+            defaults.hyperlink_color
+        };
+
+        let c = &self.text_color;
+        visuals.override_text_color = if c.is_used {
+            Some(Color32::from_rgb(c.value[0], c.value[1], c.value[2]))
+        } else {
+            defaults.override_text_color
+        };
+
+        let c = &self.background_color;
+        visuals.panel_fill = if c.is_used {
+            Color32::from_rgb(c.value[0], c.value[1], c.value[2])
+        } else {
+            defaults.panel_fill
+        };
+
+        ctx.set_visuals(visuals);
+    }
+
+    fn set_font_size(&self, ctx: &egui::Context) {
+        let mut style = (*ctx.style()).clone();
+        style.text_styles = [
+            (
+                TextStyle::Heading,
+                FontId::new(self.font_size, FontFamily::Monospace),
+            ),
+            (
+                TextStyle::Body,
+                FontId::new(self.font_size, FontFamily::Monospace),
+            ),
+            (
+                TextStyle::Monospace,
+                FontId::new(self.font_size, FontFamily::Monospace),
+            ),
+            (
+                TextStyle::Button,
+                FontId::new(self.font_size, FontFamily::Monospace),
+            ),
+            (
+                TextStyle::Small,
+                FontId::new(self.font_size, FontFamily::Monospace),
+            ),
+        ]
+        .into();
+        ctx.set_style(style);
+    }
+
+    fn set_refresh_interval(&self, page: &mut GuiYleTextContext) {
+        if self.refresh_interval.is_used {
+            page.set_refresh_interval(self.refresh_interval.value);
+        } else {
+            page.stop_refresh_interval();
+        }
+    }
+}
+
 impl Default for TeleTextSettings {
     fn default() -> Self {
         Self {
@@ -79,11 +152,14 @@ impl TeleTextApp {
 
         ctx.egui_ctx.set_fonts(fonts);
 
-        let settings = TeleTextSettings::default();
+        let settings = if let Some(storage) = ctx.storage {
+            eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
+        } else {
+            TeleTextSettings::default()
+        };
+
         let mut page = GuiYleTextContext::new(ctx.egui_ctx.clone());
-        if settings.refresh_interval.is_used {
-            page.set_refresh_interval(settings.refresh_interval.value);
-        }
+        settings.init_all(&ctx.egui_ctx, &mut page);
 
         Self {
             page: Some(page),
@@ -96,7 +172,7 @@ impl TeleTextApp {
 impl eframe::App for TeleTextApp {
     /// Called by the frame work to save state before shutdown.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, eframe::APP_KEY, self);
+        eframe::set_value(storage, eframe::APP_KEY, &self.settings);
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -155,34 +231,10 @@ fn settings_window(
     page: &mut GuiYleTextContext,
 ) {
     if ui
-        .add(egui::Slider::new(&mut settings.font_size, 8.0..=24.0).text("Font size"))
+        .add(egui::Slider::new(&mut settings.font_size, 8.0..=48.0).text("Font size"))
         .changed()
     {
-        let mut style = (*ctx.style()).clone();
-        style.text_styles = [
-            (
-                TextStyle::Heading,
-                FontId::new(settings.font_size, FontFamily::Monospace),
-            ),
-            (
-                TextStyle::Body,
-                FontId::new(settings.font_size, FontFamily::Monospace),
-            ),
-            (
-                TextStyle::Monospace,
-                FontId::new(settings.font_size, FontFamily::Monospace),
-            ),
-            (
-                TextStyle::Button,
-                FontId::new(settings.font_size, FontFamily::Monospace),
-            ),
-            (
-                TextStyle::Small,
-                FontId::new(settings.font_size, FontFamily::Monospace),
-            ),
-        ]
-        .into();
-        ctx.set_style(style);
+        settings.set_font_size(ctx);
     }
     ui.separator();
 
@@ -191,52 +243,24 @@ fn settings_window(
         .spacing([40.0, 40.0])
         .striped(true)
         .show(ui, |ui| {
-            color_option(ui, "Link Color", &mut settings.link_color, |c| {
-                let mut visuals = (*ctx.style()).clone().visuals;
-                visuals.hyperlink_color = if c.is_used {
-                    Color32::from_rgb(c.value[0], c.value[1], c.value[2])
-                } else {
-                    Style::default().visuals.hyperlink_color
-                };
-                ctx.set_visuals(visuals);
-            });
-            color_option(ui, "Text Color", &mut settings.text_color, |c| {
-                let mut visuals = (*ctx.style()).clone().visuals;
-                visuals.override_text_color = if c.is_used {
-                    Some(Color32::from_rgb(c.value[0], c.value[1], c.value[2]))
-                } else {
-                    None
-                };
-                ctx.set_visuals(visuals);
-            });
-            color_option(
-                ui,
-                "Background Color",
-                &mut settings.background_color,
-                |c| {
-                    let mut visuals = (*ctx.style()).clone().visuals;
-                    visuals.panel_fill = if c.is_used {
-                        Color32::from_rgb(c.value[0], c.value[1], c.value[2])
-                    } else {
-                        Style::default().visuals.panel_fill
-                    };
-                    ctx.set_visuals(visuals);
-                },
-            );
+            if color_option(ui, "Link Color", &mut settings.link_color) {
+                settings.set_colors(ctx);
+            }
+
+            if color_option(ui, "Text Color", &mut settings.text_color) {
+                settings.set_colors(ctx);
+            }
+
+            if color_option(ui, "Background Color", &mut settings.background_color) {
+                settings.set_colors(ctx);
+            }
+
             ui.label("Refesh interval");
-            // FIXME: checkbox changing causes the color edit to not render,
-            //        breakign the UI layout for a few frames
             if ui
                 .checkbox(&mut settings.refresh_interval.is_used, "use")
                 .changed()
             {
-                if settings.refresh_interval.is_used {
-                    page.set_refresh_interval(settings.refresh_interval.value)
-                } else {
-                    page.stop_refresh_interval();
-                }
-
-                return;
+                settings.set_refresh_interval(page);
             }
 
             let interval_val = &mut settings.refresh_interval.value;
@@ -246,34 +270,28 @@ fn settings_window(
                     .add(
                         egui::DragValue::new(interval_val)
                             .speed(1.0)
-                            .clamp_range(10..=1800),
+                            .clamp_range(30..=1800),
                     )
                     .changed()
             {
-                page.set_refresh_interval(*interval_val);
+                settings.set_refresh_interval(page);
             }
 
             ui.end_row();
         });
 }
 
-fn color_option<'a>(
-    ui: &mut Ui,
-    name: &str,
-    color: &'a mut OptionSetting<[u8; 3]>,
-    changed: impl FnOnce(&'a mut OptionSetting<[u8; 3]>),
-) {
+fn color_option(ui: &mut Ui, name: &str, color: &mut OptionSetting<[u8; 3]>) -> bool {
+    let mut changed = false;
     ui.label(name);
-    // FIXME: checkbox changing causes the color edit to not render,
-    //        breakign the UI layout for a few frames
     if ui.checkbox(&mut color.is_used, "override").changed() {
-        changed(color);
-        return;
+        changed = true
     }
 
     if color.is_used && ui.color_edit_button_srgb(&mut color.value).changed() {
-        changed(color);
+        changed = true;
     }
 
     ui.end_row();
+    changed
 }

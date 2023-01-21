@@ -2834,7 +2834,7 @@ checksum = "447660ad36a13288b1db4d4248e857b510e8c3a225c822ba4fb748c0aafecffd"
 [[package]]
 name = "winit"
 version = "0.27.2"
-source = "git+https://github.com/Nykseli/winit?branch=windows-mouse-fix#2e4338bb8dddf820c9bcda23d6b7a0d8a6208831"
+source = "git+https://github.com/Nykseli/winit?branch=windows-mouse-fix#26c5a1fa39542ed7fe2e27da23df166a4c50f769"
 dependencies = [
  "bitflags",
  "cocoa",

@@ -76,7 +76,7 @@ impl TeleTextApp {
 
         Self {
             page: Some(GuiYleTextContext::new(ctx.egui_ctx.clone())),
-            settings_open: true,
+            settings_open: false,
             settings: Default::default(),
         }
     }
@@ -88,12 +88,16 @@ impl eframe::App for TeleTextApp {
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let Self {
             page,
             settings_open,
             settings,
         } = self;
+
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            top_menu_bar(ui, frame, settings_open);
+        });
 
         // .input() locks ctx so we need to copy the data to avoid locks
         let input = ctx.input().to_owned();
@@ -113,6 +117,22 @@ impl eframe::App for TeleTextApp {
 
         ctx.request_repaint_after(Duration::from_millis(100));
     }
+}
+
+fn top_menu_bar(ui: &mut Ui, frame: &mut eframe::Frame, open: &mut bool) {
+    // TODO: hide bar after Settigns etc is clicked
+    egui::menu::bar(ui, |ui| {
+        ui.menu_button("File", |ui| {
+            if ui.button("Settings").clicked() {
+                *open = true;
+            }
+
+            ui.separator();
+            if ui.button("Quit").clicked() {
+                frame.close();
+            }
+        });
+    });
 }
 
 fn settings_window(ui: &mut Ui, ctx: &egui::Context, settings: &mut TeleTextSettings) {

@@ -4,6 +4,7 @@ use std::{
     rc::Rc,
     sync::{Arc, Mutex},
     thread,
+    time::Duration,
 };
 
 use crate::html_parser::{HtmlItem, HtmlLink, HtmlLoader, HtmlText, TeleText, MIDDLE_TEXT_MAX_LEN};
@@ -382,6 +383,7 @@ pub struct GuiYleTextContext {
     current_page: TelePage,
     history: TeleHistory,
     page_buffer: Vec<i32>,
+    worker: Option<YleTextGuiWorker>,
 }
 
 impl GuiYleTextContext {
@@ -402,6 +404,7 @@ impl GuiYleTextContext {
             state: Arc::new(Mutex::new(state)),
             page_buffer: Vec::with_capacity(3),
             history: TeleHistory::new(current_page),
+            worker: None,
         }
     }
 
@@ -442,7 +445,28 @@ impl GuiYleTextContext {
     }
 
     pub fn draw(&mut self, ui: &mut egui::Ui) {
+        if let Some(worker) = &mut self.worker {
+            if worker.should_refresh() {
+                worker.use_refresh();
+                self.load_current_page();
+            }
+        }
+
         GuiYleText::new(ui, self).draw();
+    }
+
+    pub fn set_refresh_interval(&mut self, interval: u64) {
+        if let Some(worker) = &mut self.worker {
+            worker.set_interval(interval);
+        } else {
+            let mut worker = YleTextGuiWorker::new(interval);
+            worker.start();
+            self.worker = Some(worker);
+        }
+    }
+
+    pub fn stop_refresh_interval(&mut self) {
+        self.worker = None;
     }
 
     pub fn return_from_error_page(&mut self) {
@@ -499,5 +523,81 @@ impl GuiYleTextContext {
             .parse(HtmlLoader { page_data: body })
             .map_err(|_| ())?;
         Ok(teletext)
+    }
+}
+
+pub struct YleTextGuiWorker {
+    running: Arc<Mutex<bool>>,
+    timer: Arc<Mutex<u64>>,
+    /// How often refresh should happen in seconds
+    interval: Arc<Mutex<u64>>,
+    should_refresh: Arc<Mutex<bool>>,
+}
+
+impl YleTextGuiWorker {
+    pub fn new(interval: u64) -> Self {
+        Self {
+            running: Arc::new(Mutex::new(false)),
+            should_refresh: Arc::new(Mutex::new(false)),
+            timer: Arc::new(Mutex::new(0)),
+            interval: Arc::new(Mutex::new(interval)),
+        }
+    }
+
+    pub fn start(&mut self) {
+        *self.running.lock().unwrap() = true;
+        let running = self.running.clone();
+        let timer = self.timer.clone();
+        let interval = self.interval.clone();
+        let should_refresh = self.should_refresh.clone();
+        thread::spawn(move || {
+            while *running.lock().unwrap() {
+                thread::sleep(Duration::from_secs(1));
+                let mut refresh = should_refresh.lock().unwrap();
+                // Only incerement timeres when there's no refresh happening
+                if !*refresh {
+                    let mut timer = timer.lock().unwrap();
+                    let new_time = *timer + 1;
+                    let interval = *interval.lock().unwrap();
+                    if new_time >= interval {
+                        *timer = 0;
+                        *refresh = true;
+                    } else {
+                        *timer = new_time;
+                    }
+                }
+            }
+        });
+    }
+
+    pub fn stop(&mut self) {
+        *self.timer.lock().unwrap() = 0;
+        *self.running.lock().unwrap() = false;
+    }
+
+    pub fn set_interval(&mut self, interval: u64) {
+        *self.timer.lock().unwrap() = 0;
+        *self.interval.lock().unwrap() = interval;
+    }
+
+    pub fn should_refresh(&self) -> bool {
+        *self.should_refresh.lock().unwrap()
+    }
+
+    pub fn use_refresh(&mut self) {
+        *self.should_refresh.lock().unwrap() = false;
+    }
+}
+
+impl Drop for YleTextGuiWorker {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+impl Default for YleTextGuiWorker {
+    fn default() -> Self {
+        // 5 minutes
+        Self::new(300)
     }
 }

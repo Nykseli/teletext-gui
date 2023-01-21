@@ -26,6 +26,7 @@ struct TeleTextSettings {
     link_color: OptionSetting<[u8; 3]>,
     text_color: OptionSetting<[u8; 3]>,
     background_color: OptionSetting<[u8; 3]>,
+    refresh_interval: OptionSetting<u64>,
 }
 
 impl Default for TeleTextSettings {
@@ -35,6 +36,10 @@ impl Default for TeleTextSettings {
             link_color: def_color_opt([17, 159, 244]),
             text_color: def_color_opt([255, 255, 255]),
             background_color: def_color_opt([0, 0, 0]),
+            refresh_interval: OptionSetting {
+                is_used: false,
+                value: 300,
+            },
         }
     }
 }
@@ -74,10 +79,16 @@ impl TeleTextApp {
 
         ctx.egui_ctx.set_fonts(fonts);
 
+        let settings = TeleTextSettings::default();
+        let mut page = GuiYleTextContext::new(ctx.egui_ctx.clone());
+        if settings.refresh_interval.is_used {
+            page.set_refresh_interval(settings.refresh_interval.value);
+        }
+
         Self {
-            page: Some(GuiYleTextContext::new(ctx.egui_ctx.clone())),
+            page: Some(page),
             settings_open: false,
-            settings: Default::default(),
+            settings,
         }
     }
 }
@@ -112,7 +123,9 @@ impl eframe::App for TeleTextApp {
         egui::Window::new("Settings")
             .open(settings_open)
             .show(ctx, |ui| {
-                settings_window(ui, ctx, settings);
+                if let Some(page) = page {
+                    settings_window(ui, ctx, settings, page);
+                }
             });
 
         ctx.request_repaint_after(Duration::from_millis(100));
@@ -135,7 +148,12 @@ fn top_menu_bar(ui: &mut Ui, frame: &mut eframe::Frame, open: &mut bool) {
     });
 }
 
-fn settings_window(ui: &mut Ui, ctx: &egui::Context, settings: &mut TeleTextSettings) {
+fn settings_window(
+    ui: &mut Ui,
+    ctx: &egui::Context,
+    settings: &mut TeleTextSettings,
+    page: &mut GuiYleTextContext,
+) {
     if ui
         .add(egui::Slider::new(&mut settings.font_size, 8.0..=24.0).text("Font size"))
         .changed()
@@ -205,6 +223,37 @@ fn settings_window(ui: &mut Ui, ctx: &egui::Context, settings: &mut TeleTextSett
                     ctx.set_visuals(visuals);
                 },
             );
+            ui.label("Refesh interval");
+            // FIXME: checkbox changing causes the color edit to not render,
+            //        breakign the UI layout for a few frames
+            if ui
+                .checkbox(&mut settings.refresh_interval.is_used, "use")
+                .changed()
+            {
+                if settings.refresh_interval.is_used {
+                    page.set_refresh_interval(settings.refresh_interval.value)
+                } else {
+                    page.stop_refresh_interval();
+                }
+
+                return;
+            }
+
+            let interval_val = &mut settings.refresh_interval.value;
+
+            if settings.refresh_interval.is_used
+                && ui
+                    .add(
+                        egui::DragValue::new(interval_val)
+                            .speed(1.0)
+                            .clamp_range(10..=1800),
+                    )
+                    .changed()
+            {
+                page.set_refresh_interval(*interval_val);
+            }
+
+            ui.end_row();
         });
 }
 

@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 mod gui;
-mod html_parser;
+mod parser;
 
 fn main() {
     tracing_subscriber::fmt::init();

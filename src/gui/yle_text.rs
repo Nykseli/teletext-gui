@@ -7,7 +7,9 @@ use std::{
     time::Duration,
 };
 
-use crate::html_parser::{HtmlItem, HtmlLink, HtmlLoader, HtmlText, TeleText, MIDDLE_TEXT_MAX_LEN};
+use crate::parser::{
+    HtmlItem, HtmlLink, HtmlLoader, HtmlParser, HtmlText, TeleText, MIDDLE_TEXT_MAX_LEN,
+};
 use egui::{FontId, InputState, RichText, TextStyle};
 
 use super::common::input_to_num;

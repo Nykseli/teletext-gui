@@ -1,9 +1,12 @@
 use std::time::Duration;
 
 mod common;
+mod yle_image;
 mod yle_text;
 use egui::{Color32, FontFamily, FontId, Style, TextStyle, Ui};
 
+use self::common::{GuiContext, IGuiCtx};
+use self::yle_image::GuiYleImageContext;
 use self::yle_text::GuiYleTextContext;
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
@@ -20,9 +23,35 @@ fn def_color_opt(color: [u8; 3]) -> OptionSetting<[u8; 3]> {
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
+enum Pages {
+    YleText,
+    YleImage,
+}
+
+impl Pages {
+    fn to_gui(&self, egui: &egui::Context) -> Box<dyn IGuiCtx> {
+        match self {
+            Self::YleImage => {
+                Box::new(GuiYleImageContext::new(GuiContext::new(egui.clone()))) as Box<dyn IGuiCtx>
+            }
+            Self::YleText => {
+                Box::new(GuiYleTextContext::new(GuiContext::new(egui.clone()))) as Box<dyn IGuiCtx>
+            }
+        }
+    }
+}
+
+impl Default for Pages {
+    fn default() -> Self {
+        Self::YleText
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 struct TeleTextSettings {
     font_size: f32,
+    open_page: Pages,
     link_color: OptionSetting<[u8; 3]>,
     text_color: OptionSetting<[u8; 3]>,
     background_color: OptionSetting<[u8; 3]>,
@@ -31,7 +60,7 @@ struct TeleTextSettings {
 
 impl TeleTextSettings {
     /// Initialize all settings, should be used when app is initalised
-    fn init_all(&self, ctx: &egui::Context, page: &mut GuiYleTextContext) {
+    fn init_all(&self, ctx: &egui::Context, page: &mut Box<dyn IGuiCtx>) {
         self.set_colors(ctx);
         self.set_font_size(ctx);
         self.set_refresh_interval(page);
@@ -93,7 +122,7 @@ impl TeleTextSettings {
         ctx.set_style(style);
     }
 
-    fn set_refresh_interval(&self, page: &mut GuiYleTextContext) {
+    fn set_refresh_interval(&self, page: &mut Box<dyn IGuiCtx>) {
         if self.refresh_interval.is_used {
             page.set_refresh_interval(self.refresh_interval.value);
         } else {
@@ -106,6 +135,7 @@ impl Default for TeleTextSettings {
     fn default() -> Self {
         Self {
             font_size: 12.5,
+            open_page: Default::default(),
             link_color: def_color_opt([17, 159, 244]),
             text_color: def_color_opt([255, 255, 255]),
             background_color: def_color_opt([0, 0, 0]),
@@ -122,7 +152,7 @@ impl Default for TeleTextSettings {
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct TeleTextApp {
     #[serde(skip)]
-    page: Option<GuiYleTextContext>,
+    page: Option<Box<dyn IGuiCtx>>,
     #[serde(skip)]
     settings_open: bool,
     settings: TeleTextSettings,
@@ -158,8 +188,13 @@ impl TeleTextApp {
             TeleTextSettings::default()
         };
 
-        let mut page = GuiYleTextContext::new(ctx.egui_ctx.clone());
-        settings.init_all(&ctx.egui_ctx, &mut page);
+        /* let mut page = Box::new(GuiYleImageContext::new(GuiContext::new(
+            ctx.egui_ctx.clone(),
+        ))) as Box<dyn IGuiCtx>; */
+        let mut page = settings.open_page.to_gui(&ctx.egui_ctx);
+        let page_ref = &mut page as &mut Box<dyn IGuiCtx>;
+
+        settings.init_all(&ctx.egui_ctx, page_ref);
 
         Self {
             page: Some(page),
@@ -183,7 +218,7 @@ impl eframe::App for TeleTextApp {
         } = self;
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            top_menu_bar(ui, frame, settings_open);
+            top_menu_bar(ui, ctx, frame, settings_open, page, settings);
         });
 
         // .input() locks ctx so we need to copy the data to avoid locks
@@ -208,17 +243,39 @@ impl eframe::App for TeleTextApp {
     }
 }
 
-fn top_menu_bar(ui: &mut Ui, frame: &mut eframe::Frame, open: &mut bool) {
-    // TODO: hide bar after Settigns etc is clicked
+fn top_menu_bar(
+    ui: &mut Ui,
+    egui: &egui::Context,
+    frame: &mut eframe::Frame,
+    open: &mut bool,
+    page: &mut Option<Box<dyn IGuiCtx>>,
+    settings: &mut TeleTextSettings,
+) {
     egui::menu::bar(ui, |ui| {
         ui.menu_button("File", |ui| {
+            ui.menu_button("Reader", |ui| {
+                if ui.button("Yle Text").clicked() {
+                    settings.open_page = Pages::YleText;
+                    *page = Some(Pages::YleText.to_gui(egui));
+                    ui.close_menu();
+                }
+
+                if ui.button("Yle Image").clicked() {
+                    settings.open_page = Pages::YleImage;
+                    *page = Some(Pages::YleImage.to_gui(egui));
+                    ui.close_menu();
+                }
+            });
+
             if ui.button("Settings").clicked() {
                 *open = true;
+                ui.close_menu();
             }
 
             ui.separator();
             if ui.button("Quit").clicked() {
                 frame.close();
+                ui.close_menu();
             }
         });
     });
@@ -228,7 +285,7 @@ fn settings_window(
     ui: &mut Ui,
     ctx: &egui::Context,
     settings: &mut TeleTextSettings,
-    page: &mut GuiYleTextContext,
+    page: &mut Box<dyn IGuiCtx>,
 ) {
     if ui
         .add(egui::Slider::new(&mut settings.font_size, 8.0..=48.0).text("Font size"))

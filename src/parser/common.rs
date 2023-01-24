@@ -28,13 +28,16 @@ pub fn decode_string(string: &str) -> String {
     new_string
 }
 
+#[derive(Debug)]
 pub enum TagType {
     Unknown,
     P,
     Big,
+    Div,
     Pre,
     Link,
     Font,
+    Span,
     Center,
 }
 
@@ -55,10 +58,13 @@ pub enum HtmlItem {
 }
 
 pub trait HtmlParser {
-    type ReturnType;
+    /* type ReturnType; */
 
     /// Get tag type in the current position
-    fn get_tag_type(current: &str) -> TagType {
+    fn get_tag_type(current: &str) -> TagType
+    where
+        Self: Sized,
+    {
         let mut html = current;
 
         if html.starts_with('<') {
@@ -71,10 +77,14 @@ pub trait HtmlParser {
             return TagType::Link;
         } else if html.starts_with("big") {
             return TagType::Big;
+        } else if html.starts_with("div") {
+            return TagType::Div;
         } else if html.starts_with("pre") {
             return TagType::Pre;
         } else if html.starts_with("font") {
             return TagType::Font;
+        } else if html.starts_with("span") {
+            return TagType::Span;
         } else if html.starts_with("center") {
             return TagType::Center;
         }
@@ -86,14 +96,29 @@ pub trait HtmlParser {
     //       when the pattern is stable enough to use
     /*  fn skip_next_pattern<P: std::str::pattern::Pattern>(state, pattern: P) {} */
 
-    fn skip_next_char<'a>(state: &'a mut ParseState<'a>, chr: char) -> InnerResult<'a, ()> {
+    fn skip_next_char<'a>(state: &'a mut ParseState<'a>, chr: char) -> InnerResult<'a, ()>
+    where
+        Self: Sized,
+    {
         let chr_start = state.current.find(chr).ok_or(ParseErr::InvalidPage)?;
         let chr_end = chr_start + 1; // char is always + 1
         state.current = &state.current[chr_end..];
         Ok((state, ()))
     }
 
-    fn skip_next_string<'a>(state: &'a mut ParseState<'a>, string: &str) -> InnerResult<'a, ()> {
+    fn skip_to_next_char<'a>(state: &'a mut ParseState<'a>, chr: char) -> InnerResult<'a, ()>
+    where
+        Self: Sized,
+    {
+        let chr_start = state.current.find(chr).ok_or(ParseErr::InvalidPage)?;
+        state.current = &state.current[chr_start..];
+        Ok((state, ()))
+    }
+
+    fn skip_next_string<'a>(state: &'a mut ParseState<'a>, string: &str) -> InnerResult<'a, ()>
+    where
+        Self: Sized,
+    {
         let string_start = state.current.find(string).ok_or(ParseErr::InvalidPage)?;
         let string_end = string_start + string.len();
         state.current = &state.current[string_end..];
@@ -104,7 +129,10 @@ pub trait HtmlParser {
         mut state: &'a mut ParseState<'a>,
         tag: &str,
         closing: bool,
-    ) -> InnerResult<'a, ()> {
+    ) -> InnerResult<'a, ()>
+    where
+        Self: Sized,
+    {
         // TODO: Do we need to heap allocate a new string here?
         let html_tag = if closing {
             format!("</{}", tag)
@@ -119,12 +147,15 @@ pub trait HtmlParser {
         Ok((state, ()))
     }
 
-    fn parse_current_link<'a>(mut state: &'a mut ParseState<'a>) -> InnerResult<'a, HtmlLink> {
+    fn parse_current_link<'a>(mut state: &'a mut ParseState<'a>) -> InnerResult<'a, HtmlLink>
+    where
+        Self: Sized,
+    {
         state = Self::skip_next_string(state, "href=\"")?.0;
         let url_end = state.current.find('"').ok_or(ParseErr::InvalidPage)?;
         let url = state.current[..url_end].to_string();
 
-        // Go to the end of the link thag
+        // Go to the end of the link tag
         state = Self::skip_next_string(state, ">")?.0;
 
         let inner_end = state.current.find('<').ok_or(ParseErr::InvalidPage)?;
@@ -135,7 +166,12 @@ pub trait HtmlParser {
         Ok((state, HtmlLink { url, inner_text }))
     }
 
-    fn parse(self, loader: HtmlLoader) -> ParserResult<Self::ReturnType>;
+    fn parse(self, loader: HtmlLoader) -> ParserResult<Self>
+    where
+        Self: Sized;
+    fn new() -> Self
+    where
+        Self: Sized;
 }
 
 #[derive(Debug)]

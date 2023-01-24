@@ -1,19 +1,21 @@
 use std::{cell::RefCell, ops::Deref, rc::Rc};
 
-use crate::parser::{HtmlItem, HtmlLink, HtmlText, TeleText, MIDDLE_TEXT_MAX_LEN};
 use egui::{FontId, InputState, RichText, TextStyle};
+use egui_extras::RetainedImage;
+
+use crate::parser::{HtmlLink, HtmlText, YleImage};
 
 use super::common::{FetchState, GuiContext, IGuiCtx, PageDraw, TelePage, TelePager};
 
-pub struct GuiYleText<'a> {
+pub struct GuiYleImage<'a> {
     ui: &'a mut egui::Ui,
-    ctx: Rc<RefCell<&'a mut GuiContext<TeleText>>>,
+    ctx: Rc<RefCell<&'a mut GuiContext<YleImage>>>,
     panel_width: f32,
     char_width: f32,
     is_small: bool,
 }
 
-impl<'a> GuiYleText<'a> {
+impl<'a> GuiYleImage<'a> {
     fn get_page_str(&self) -> String {
         let page_buf = &self.ctx.borrow().page_buffer;
         let page_num = if !page_buf.is_empty() {
@@ -34,7 +36,7 @@ impl<'a> GuiYleText<'a> {
         let chw = self.char_width;
         let page_len = chw * 4.0;
         let title_len = (title.chars().count() as f32) * chw;
-        let title_space = (self.panel_width / 2.0) - (title_len / 2.0) - page_len;
+        let title_space = self.panel_width - title_len - page_len;
         let page = self.get_page_str();
 
         self.ui.horizontal(|ui| {
@@ -52,6 +54,7 @@ impl<'a> GuiYleText<'a> {
         let nav_start = (self.panel_width / 2.0) - (nav_length / 2.0);
         let page_len = chw * 4.0;
         let time_len = chw * 15.0;
+        let title = format!("{} YLE TEKSTI-TV", title);
         let title_len = (title.chars().count() as f32) * chw;
 
         let title_space = (nav_length / 2.0) - (title_len / 2.0) - page_len;
@@ -66,7 +69,7 @@ impl<'a> GuiYleText<'a> {
             ui.add_space(title_space);
             ui.label(title.clone());
             ui.add_space(time_space);
-            let now = chrono::Utc::now();
+            let now = chrono::Local::now();
             ui.label(now.format("%d.%m. %H:%M:%S").to_string());
         });
     }
@@ -79,7 +82,15 @@ impl<'a> GuiYleText<'a> {
         }
     }
 
-    fn draw_page_navigation_small(&mut self, navigation: &[HtmlItem]) {
+    fn draw_image(&mut self, image: &[u8]) {
+        self.ui
+            .with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                let image = RetainedImage::from_image_bytes("debug_name", image).unwrap();
+                image.show_max_size(ui, ui.available_size());
+            });
+    }
+
+    fn draw_page_navigation_small(&mut self, navigation: &[Option<HtmlLink>]) {
         let mut body_font = TextStyle::Body.resolve(self.ui.style());
         body_font.size *= 3.0;
         let arrow_width = self.ui.fonts().glyph_width(&body_font, 'W');
@@ -100,12 +111,12 @@ impl<'a> GuiYleText<'a> {
 
                 let icon_text = RichText::new(icon).font(FontId::monospace(body_font.size));
                 match item {
-                    HtmlItem::Link(link) => {
+                    Some(link) => {
                         if ui.link(icon_text).clicked() {
                             ctx.borrow_mut().load_page(&link.url, true);
                         };
                     }
-                    HtmlItem::Text(_) => {
+                    None => {
                         ui.label(icon_text);
                     }
                 }
@@ -117,96 +128,36 @@ impl<'a> GuiYleText<'a> {
         });
     }
 
-    fn draw_page_navigation_normal(&mut self, navigation: &[HtmlItem]) {
+    fn draw_page_navigation_normal(&mut self, navigation: &[Option<HtmlLink>]) {
         // "Edellinen sivu | Edellinen alasivu | Seuraava alasivu | Seuraava sivu" is 69 char
-        let page_nav_start = (self.panel_width / 2.0) - (self.char_width * 69.0 / 2.0);
+        let valid_link: Vec<&HtmlLink> = navigation.iter().filter_map(|n| n.as_ref()).collect();
+        let text_len = valid_link.iter().fold(0.0, |acum, val| {
+            acum + val.inner_text.chars().count() as f32
+        });
+        let page_nav_start = (self.panel_width / 2.0) - (self.char_width * text_len / 2.0);
         let ctx = &self.ctx;
         self.ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             ui.add_space(page_nav_start);
-            for (idx, item) in navigation.iter().enumerate() {
+            for (idx, item) in valid_link.iter().enumerate() {
                 item.add_to_ui(ui, ctx.clone());
-                if idx < 3 {
+                if idx < valid_link.len() - 1 {
                     ui.label(" | ");
                 }
             }
         });
     }
 
-    fn draw_page_navigation(&mut self, navigation: &[HtmlItem]) {
+    fn draw_page_navigation(&mut self, navigation: &[Option<HtmlLink>]) {
         if self.is_small {
             self.draw_page_navigation_small(navigation);
         } else {
             self.draw_page_navigation_normal(navigation);
         }
     }
-
-    fn draw_middle(&mut self, rows: &Vec<Vec<HtmlItem>>) {
-        let middle_text_start =
-            (self.panel_width / 2.0) - (self.char_width * (MIDDLE_TEXT_MAX_LEN as f32) / 2.0);
-        let ctx = &self.ctx;
-        for row in rows {
-            self.ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                ui.add_space(middle_text_start);
-                for item in row {
-                    item.add_to_ui(ui, ctx.clone());
-                }
-            });
-        }
-    }
-
-    fn draw_sub_pages(&mut self, pages: &[HtmlItem]) {
-        let middle_text_start =
-            (self.panel_width / 2.0) - (self.char_width * (MIDDLE_TEXT_MAX_LEN as f32) / 2.0);
-        let ctx = &self.ctx;
-        self.ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            ui.add_space(middle_text_start);
-            for item in pages {
-                item.add_to_ui(ui, ctx.clone());
-            }
-        });
-    }
-
-    fn draw_bottom_navigation_small(&mut self, navigation: &[HtmlLink]) {
-        // "Teksti-TV" is 9 chars
-        let page_nav_start = (self.panel_width / 2.0) - (self.char_width * 9.0 / 2.0);
-        let ctx = &self.ctx;
-        self.ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            ui.add_space(page_nav_start);
-            let link = navigation.last().unwrap();
-            link.add_to_ui(ui, ctx.clone());
-        });
-    }
-
-    fn draw_bottom_navigation_normal(&mut self, navigation: &[HtmlLink]) {
-        // "Kotimaa | Ulkomaat | Talous | Urheilu | Svenska sidor | Teksti-TV" is 65 chars
-        let page_nav_start = (self.panel_width / 2.0) - (self.char_width * 65.0 / 2.0);
-        let ctx = &self.ctx;
-        self.ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            ui.add_space(page_nav_start);
-            for (idx, item) in navigation.iter().enumerate() {
-                item.add_to_ui(ui, ctx.clone());
-                if idx < 5 {
-                    ui.label(" | ");
-                }
-            }
-        });
-    }
-
-    fn draw_bottom_navigation(&mut self, navigation: &[HtmlLink]) {
-        if self.is_small {
-            self.draw_bottom_navigation_small(navigation);
-        } else {
-            self.draw_bottom_navigation_normal(navigation);
-        }
-    }
 }
 
-impl<'a> PageDraw<'a, TeleText> for GuiYleText<'a> {
+impl<'a> PageDraw<'a, YleImage> for GuiYleImage<'a> {
     fn draw(&mut self) {
         let ctx = &self.ctx;
         let state = self.ctx.borrow().state.clone();
@@ -214,12 +165,8 @@ impl<'a> PageDraw<'a, TeleText> for GuiYleText<'a> {
         match state.lock().unwrap().deref() {
             FetchState::Complete(page) => {
                 self.draw_header(&page.title);
-                self.draw_page_navigation(&page.page_navigation);
-                self.draw_middle(&page.middle_rows);
-                self.draw_sub_pages(&page.sub_pages);
-                self.ui.label("\n");
-                self.draw_page_navigation(&page.page_navigation);
-                self.draw_bottom_navigation(&page.bottom_navigation);
+                self.draw_image(&page.image);
+                self.draw_page_navigation(&page.botton_navigation);
             }
             FetchState::Fetching => {
                 self.ui
@@ -255,7 +202,7 @@ impl<'a> PageDraw<'a, TeleText> for GuiYleText<'a> {
         };
     }
 
-    fn new(ui: &'a mut egui::Ui, ctx: &'a mut GuiContext<TeleText>) -> Self {
+    fn new(ui: &'a mut egui::Ui, ctx: &'a mut GuiContext<YleImage>) -> Self {
         let panel_width = ui.available_width();
         let body_font = TextStyle::Body.resolve(ui.style());
         let char_width = ui.fonts().glyph_width(&body_font, 'W');
@@ -273,24 +220,24 @@ impl<'a> PageDraw<'a, TeleText> for GuiYleText<'a> {
     }
 }
 
-pub struct GuiYleTextContext {
-    ctx: GuiContext<TeleText>,
+pub struct GuiYleImageContext {
+    ctx: GuiContext<YleImage>,
 }
 
-impl GuiYleTextContext {
-    pub fn new(ctx: GuiContext<TeleText>) -> Self {
+impl GuiYleImageContext {
+    pub fn new(ctx: GuiContext<YleImage>) -> Self {
         Self { ctx }
     }
 }
 
-impl IGuiCtx for GuiYleTextContext {
+impl IGuiCtx for GuiYleImageContext {
     fn handle_input(&mut self, input: &InputState) {
         self.ctx.handle_input(input)
     }
 
     fn draw(&mut self, ui: &mut egui::Ui) {
         self.ctx.draw(ui);
-        GuiYleText::new(ui, &mut self.ctx).draw();
+        GuiYleImage::new(ui, &mut self.ctx).draw();
     }
 
     fn set_refresh_interval(&mut self, interval: u64) {
@@ -314,13 +261,17 @@ impl IGuiCtx for GuiYleTextContext {
     }
 }
 
-impl TelePager for TeleText {
+impl TelePager for YleImage {
     fn to_full_page(page: &TelePage) -> String {
-        // https://yle.fi/tekstitv/txt/100_0001.htm
+        // https://yle.fi/aihe/yle-ttv/json?P=100_0001
         format!(
-            "https://yle.fi/tekstitv/txt/{}_{:04}.htm",
+            "https://yle.fi/aihe/yle-ttv/json?P={}_{:04}",
             page.page, page.sub_page
         )
+    }
+
+    fn to_page_str(page: &TelePage) -> String {
+        format!("{}_{:04}", page.page, page.sub_page)
     }
 
     fn from_page_str(page: &str) -> TelePage {
@@ -328,9 +279,5 @@ impl TelePager for TeleText {
         let sub_page = page[4..8].parse::<i32>().unwrap();
 
         TelePage::new(current_page, sub_page)
-    }
-
-    fn to_page_str(page: &TelePage) -> String {
-        format!("{}_{:04}.htm", page.page, page.sub_page)
     }
 }

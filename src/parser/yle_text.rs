@@ -198,8 +198,10 @@ impl TeleText {
 
         Ok((state, links))
     }
+}
 
-    pub fn new() -> TeleText {
+impl HtmlParser for TeleText {
+    fn new() -> TeleText {
         TeleText {
             title: "".to_string(),
             page_navigation: vec![],
@@ -208,12 +210,8 @@ impl TeleText {
             middle_rows: vec![],
         }
     }
-}
 
-impl HtmlParser for TeleText {
-    type ReturnType = Self;
-
-    fn parse(mut self, loader: HtmlLoader) -> ParserResult<Self::ReturnType> {
+    fn parse(mut self, loader: HtmlLoader) -> ParserResult<Self> {
         let mut state = ParseState::new(&loader.page_data);
         let (state, title) = Self::parse_title(&mut state)?;
         self.title = title;

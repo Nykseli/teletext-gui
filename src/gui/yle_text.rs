@@ -66,7 +66,7 @@ impl<'a> GuiYleText<'a> {
             ui.add_space(title_space);
             ui.label(title.clone());
             ui.add_space(time_space);
-            let now = chrono::Utc::now();
+            let now = chrono::Local::now();
             ui.label(now.format("%d.%m. %H:%M:%S").to_string());
         });
     }

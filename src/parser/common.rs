@@ -57,9 +57,40 @@ pub enum HtmlItem {
     Link(HtmlLink),
 }
 
-pub trait HtmlParser {
-    /* type ReturnType; */
+#[derive(Debug)]
+pub struct HtmlImageArea {
+    pub x1: f32,
+    pub y1: f32,
+    pub x2: f32,
+    pub y2: f32,
+    pub link: String,
+}
 
+impl HtmlImageArea {
+    pub fn new(x1: f32, y1: f32, x2: f32, y2: f32, link: String) -> Self {
+        Self {
+            x1,
+            y1,
+            x2,
+            y2,
+            link,
+        }
+    }
+
+    pub fn in_area(&self, x: f32, y: f32, scale: f32) -> bool {
+        if x < (self.x1 * scale) || x > (self.x2 * scale) {
+            return false;
+        }
+
+        if y < (self.y1 * scale) || y > (self.y2 * scale) {
+            return false;
+        }
+
+        true
+    }
+}
+
+pub trait HtmlParser {
     /// Get tag type in the current position
     fn get_tag_type(current: &str) -> TagType
     where

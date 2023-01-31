@@ -1,8 +1,8 @@
 use base64::{engine::general_purpose, Engine as _};
 
 use super::common::{
-    decode_string, HtmlLink, HtmlLoader, HtmlParser, HtmlText, InnerResult, ParseErr, ParseState,
-    ParserResult, TagType,
+    decode_string, HtmlImageArea, HtmlLink, HtmlLoader, HtmlParser, HtmlText, InnerResult,
+    ParseErr, ParseState, ParserResult, TagType,
 };
 
 extern crate html_escape;
@@ -65,6 +65,7 @@ struct ImageJson {
 pub struct YleImage {
     pub title: HtmlText,
     pub image: Vec<u8>,
+    pub image_map: Vec<HtmlImageArea>,
     pub botton_navigation: Vec<Option<HtmlLink>>,
 }
 
@@ -114,8 +115,6 @@ impl YleImage {
     fn parse_bottom_navigation<'a>(
         mut state: &'a mut ParseState<'a>,
     ) -> InnerResult<'a, Vec<Option<HtmlLink>>> {
-        // state = Self::skip_next_string(state, "js-yle-ttv-pagination")?.0;
-
         let mut nav_links: Vec<Option<HtmlLink>> = Vec::new();
         while !state.current.is_empty() {
             state = Self::skip_next_char(state, '<')?.0;
@@ -150,14 +149,49 @@ impl YleImage {
 
         Ok((state, nav_links))
     }
+
+    fn parse_image_map<'a>(
+        mut state: &'a mut ParseState<'a>,
+    ) -> InnerResult<'a, Vec<HtmlImageArea>> {
+        state = Self::skip_next_tag(state, "map", false)?.0;
+        state = Self::skip_next_char(state, '<')?.0;
+
+        let mut map: Vec<HtmlImageArea> = Vec::new();
+        while !state.current.starts_with("/map>") {
+            let area_line = state.current.find('>').unwrap();
+            let area_line = &state.current[..area_line];
+
+            // Not all areas contain the new page so we can just ignore them
+            if area_line.contains("data-yle-ttv-page-name") {
+                let mut line_state = ParseState::new(area_line);
+                let line_state = Self::skip_next_string(&mut line_state, "coords=\"")?.0;
+                let coord_end = line_state.current.find('"').ok_or(ParseErr::InvalidPage)?;
+                let coord = line_state.current[..coord_end].to_string();
+                let coords: Vec<f32> = coord
+                    .split(',')
+                    .map(|c| c.parse::<f32>().unwrap())
+                    .collect();
+                let line_state = Self::skip_next_string(line_state, "data-yle-ttv-page-name=\"")?.0;
+                let page_end = line_state.current.find('"').ok_or(ParseErr::InvalidPage)?;
+                let page = line_state.current[..page_end].to_string();
+                map.push(HtmlImageArea::new(
+                    coords[0], coords[1], coords[2], coords[3], page,
+                ));
+            }
+
+            state = Self::skip_next_char(state, '<')?.0;
+        }
+
+        Ok((state, map))
+    }
 }
 
 impl HtmlParser for YleImage {
-    // type ReturnType = Self;
     fn new() -> Self {
         Self {
             title: "".into(),
             image: Vec::new(),
+            image_map: Vec::new(),
             botton_navigation: Vec::new(),
         }
     }
@@ -170,6 +204,8 @@ impl HtmlParser for YleImage {
         self.image = Self::parse_image(&mut state)?.1;
         let mut state = ParseState::new(&json.data[0].content.pagination);
         self.botton_navigation = Self::parse_bottom_navigation(&mut state)?.1;
+        let mut state = ParseState::new(&json.data[0].content.image_map);
+        self.image_map = Self::parse_image_map(&mut state)?.1;
 
         Ok(self)
     }

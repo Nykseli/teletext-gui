@@ -284,7 +284,7 @@ impl GuiYleTextContext {
 }
 
 impl IGuiCtx for GuiYleTextContext {
-    fn handle_input(&mut self, input: &InputState) {
+    fn handle_input(&mut self, input: InputState) {
         self.ctx.handle_input(input)
     }
 

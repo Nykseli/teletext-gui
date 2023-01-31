@@ -1,9 +1,9 @@
 use std::{cell::RefCell, ops::Deref, rc::Rc};
 
-use egui::{FontId, InputState, RichText, TextStyle};
+use egui::{CursorIcon, FontId, InputState, RichText, TextStyle};
 use egui_extras::RetainedImage;
 
-use crate::parser::{HtmlLink, HtmlText, YleImage};
+use crate::parser::{common::HtmlImageArea, HtmlLink, HtmlText, YleImage};
 
 use super::common::{FetchState, GuiContext, IGuiCtx, PageDraw, TelePage, TelePager};
 
@@ -82,11 +82,36 @@ impl<'a> GuiYleImage<'a> {
         }
     }
 
-    fn draw_image(&mut self, image: &[u8]) {
+    fn draw_image(&mut self, image: &[u8], image_map: &Vec<HtmlImageArea>) {
+        let mut ctx = self.ctx.borrow_mut();
+        let pos = ctx.pointer.hover_pos();
+        let clicked = ctx.pointer.primary_released();
         self.ui
             .with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
                 let image = RetainedImage::from_image_bytes("debug_name", image).unwrap();
-                image.show_max_size(ui, ui.available_size());
+
+                let resp = image.show_max_size(ui, ui.available_size());
+                if let Some(pos) = pos {
+                    let rh = resp.rect.max.y - resp.rect.min.y;
+                    let rw = resp.rect.max.x - resp.rect.min.x;
+                    // The aspect ratio of the image will stay the same as it's being scaled
+                    // so the scale of width and height will be the same
+                    let scale = rw / (image.size()[0] as f32);
+                    // Translate the pointer to be inside of the image
+                    let px = pos.x - resp.rect.min.x;
+                    let py = pos.y - resp.rect.min.y;
+                    if px > 0.0 && px < rw && py > 0.0 && py < rh {
+                        for area in image_map {
+                            if area.in_area(px, py, scale) {
+                                ui.ctx().output().cursor_icon = CursorIcon::PointingHand;
+                                if clicked {
+                                    ctx.load_page(&area.link, true);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
             });
     }
 
@@ -165,7 +190,7 @@ impl<'a> PageDraw<'a, YleImage> for GuiYleImage<'a> {
         match state.lock().unwrap().deref() {
             FetchState::Complete(page) => {
                 self.draw_header(&page.title);
-                self.draw_image(&page.image);
+                self.draw_image(&page.image, &page.image_map);
                 self.draw_page_navigation(&page.botton_navigation);
             }
             FetchState::Fetching => {
@@ -231,7 +256,7 @@ impl GuiYleImageContext {
 }
 
 impl IGuiCtx for GuiYleImageContext {
-    fn handle_input(&mut self, input: &InputState) {
+    fn handle_input(&mut self, input: InputState) {
         self.ctx.handle_input(input)
     }
 

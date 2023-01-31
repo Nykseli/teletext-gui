@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use egui::{self, InputState, Key::*};
+use egui::{self, InputState, Key::*, PointerState};
 
 use crate::parser::{HtmlItem, HtmlLink, HtmlLoader, HtmlParser};
 
@@ -183,7 +183,7 @@ pub enum FetchState<T: HtmlParser> {
 }
 
 pub trait IGuiCtx {
-    fn handle_input(&mut self, input: &InputState);
+    fn handle_input(&mut self, input: InputState);
     fn draw(&mut self, ui: &mut egui::Ui);
     fn set_refresh_interval(&mut self, interval: u64);
     fn stop_refresh_interval(&mut self);
@@ -199,6 +199,7 @@ pub struct GuiContext<T: HtmlParser + TelePager + Send + 'static> {
     pub history: TeleHistory,
     pub page_buffer: Vec<i32>,
     pub worker: Option<GuiWorker>,
+    pub pointer: PointerState,
 }
 
 impl<T: HtmlParser + TelePager + Send + 'static> GuiContext<T> {
@@ -212,6 +213,7 @@ impl<T: HtmlParser + TelePager + Send + 'static> GuiContext<T> {
             page_buffer: Vec::with_capacity(3),
             history: TeleHistory::new(current_page),
             worker: None,
+            pointer: Default::default(),
         }
     }
 
@@ -230,17 +232,18 @@ impl<T: HtmlParser + TelePager + Send + 'static> GuiContext<T> {
             page_buffer: Vec::with_capacity(3),
             history: TeleHistory::new(current_page),
             worker: None,
+            pointer: Default::default(),
         }
     }
 
-    pub fn handle_input(&mut self, input: &InputState) {
+    pub fn handle_input(&mut self, input: InputState) {
         // Ignore input while fetching
         match *self.state.lock().unwrap() {
             FetchState::Complete(_) => {}
             _ => return,
         };
 
-        if let Some(num) = input_to_num(input) {
+        if let Some(num) = input_to_num(&input) {
             if self.page_buffer.len() < 3 {
                 self.page_buffer.push(num);
             }
@@ -252,8 +255,11 @@ impl<T: HtmlParser + TelePager + Send + 'static> GuiContext<T> {
             }
         }
 
+        // After keyboard stuff is handled, move the ownership of pointer to self and
+        // deal with mouse inputs
+        self.pointer = input.pointer;
         // prev
-        if input.pointer.button_released(egui::PointerButton::Extra1) {
+        if self.pointer.button_released(egui::PointerButton::Extra1) {
             if let Some(page) = self.history.prev() {
                 self.current_page = page;
                 self.load_current_page();
@@ -261,7 +267,7 @@ impl<T: HtmlParser + TelePager + Send + 'static> GuiContext<T> {
         }
 
         // next
-        if input.pointer.button_released(egui::PointerButton::Extra2) {
+        if self.pointer.button_released(egui::PointerButton::Extra2) {
             if let Some(page) = self.history.next() {
                 self.current_page = page;
                 self.load_current_page();

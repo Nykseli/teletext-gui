@@ -188,9 +188,6 @@ impl TeleTextApp {
             TeleTextSettings::default()
         };
 
-        /* let mut page = Box::new(GuiYleImageContext::new(GuiContext::new(
-            ctx.egui_ctx.clone(),
-        ))) as Box<dyn IGuiCtx>; */
         let mut page = settings.open_page.to_gui(&ctx.egui_ctx);
         let page_ref = &mut page as &mut Box<dyn IGuiCtx>;
 
@@ -226,7 +223,7 @@ impl eframe::App for TeleTextApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(page) = page {
-                page.handle_input(&input);
+                page.handle_input(input);
                 page.draw(ui);
             }
         });

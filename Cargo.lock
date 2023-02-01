@@ -667,7 +667,7 @@ dependencies = [
 [[package]]
 name = "ecolor"
 version = "0.20.0"
-source = "git+https://github.com/Nykseli/egui#882a7c8001f0b79bbd8f662980f6000d5df31125"
+source = "git+https://github.com/Nykseli/egui#ef26340e3bf8beecc75dccdfa973102bd1847755"
 dependencies = [
  "bytemuck",
  "serde",
@@ -676,7 +676,7 @@ dependencies = [
 [[package]]
 name = "eframe"
 version = "0.20.1"
-source = "git+https://github.com/Nykseli/egui#882a7c8001f0b79bbd8f662980f6000d5df31125"
+source = "git+https://github.com/Nykseli/egui#ef26340e3bf8beecc75dccdfa973102bd1847755"
 dependencies = [
  "bytemuck",
  "directories-next",
@@ -701,7 +701,7 @@ dependencies = [
 [[package]]
 name = "egui"
 version = "0.20.1"
-source = "git+https://github.com/Nykseli/egui#882a7c8001f0b79bbd8f662980f6000d5df31125"
+source = "git+https://github.com/Nykseli/egui#ef26340e3bf8beecc75dccdfa973102bd1847755"
 dependencies = [
  "accesskit",
  "ahash",
@@ -715,7 +715,7 @@ dependencies = [
 [[package]]
 name = "egui-winit"
 version = "0.20.1"
-source = "git+https://github.com/Nykseli/egui#882a7c8001f0b79bbd8f662980f6000d5df31125"
+source = "git+https://github.com/Nykseli/egui#ef26340e3bf8beecc75dccdfa973102bd1847755"
 dependencies = [
  "accesskit_winit",
  "arboard",
@@ -731,7 +731,7 @@ dependencies = [
 [[package]]
 name = "egui_extras"
 version = "0.20.0"
-source = "git+https://github.com/Nykseli/egui#882a7c8001f0b79bbd8f662980f6000d5df31125"
+source = "git+https://github.com/Nykseli/egui#ef26340e3bf8beecc75dccdfa973102bd1847755"
 dependencies = [
  "egui",
  "image",
@@ -741,7 +741,7 @@ dependencies = [
 [[package]]
 name = "egui_glow"
 version = "0.20.1"
-source = "git+https://github.com/Nykseli/egui#882a7c8001f0b79bbd8f662980f6000d5df31125"
+source = "git+https://github.com/Nykseli/egui#ef26340e3bf8beecc75dccdfa973102bd1847755"
 dependencies = [
  "bytemuck",
  "egui",
@@ -755,7 +755,7 @@ dependencies = [
 [[package]]
 name = "emath"
 version = "0.20.0"
-source = "git+https://github.com/Nykseli/egui#882a7c8001f0b79bbd8f662980f6000d5df31125"
+source = "git+https://github.com/Nykseli/egui#ef26340e3bf8beecc75dccdfa973102bd1847755"
 dependencies = [
  "bytemuck",
  "serde",
@@ -795,7 +795,7 @@ dependencies = [
 [[package]]
 name = "epaint"
 version = "0.20.0"
-source = "git+https://github.com/Nykseli/egui#882a7c8001f0b79bbd8f662980f6000d5df31125"
+source = "git+https://github.com/Nykseli/egui#ef26340e3bf8beecc75dccdfa973102bd1847755"
 dependencies = [
  "ab_glyph",
  "ahash",

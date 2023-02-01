@@ -173,6 +173,16 @@ impl<'a> GuiYleImage<'a> {
         });
     }
 
+    fn draw_home_button(&mut self) {
+        let ctx = &self.ctx;
+        self.ui
+            .with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                if ui.link("Yle Teksti-TV").clicked() {
+                    ctx.borrow_mut().load_page("100_0001", true);
+                }
+            });
+    }
+
     fn draw_page_navigation(&mut self, navigation: &[Option<HtmlLink>]) {
         if self.is_small {
             self.draw_page_navigation_small(navigation);
@@ -192,6 +202,7 @@ impl<'a> PageDraw<'a, YleImage> for GuiYleImage<'a> {
                 self.draw_header(&page.title);
                 self.draw_image(&page.image, &page.image_map);
                 self.draw_page_navigation(&page.botton_navigation);
+                self.draw_home_button();
             }
             FetchState::Fetching => {
                 self.ui

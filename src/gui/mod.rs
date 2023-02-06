@@ -243,7 +243,7 @@ impl eframe::App for TeleTextApp {
 fn top_menu_bar(
     ui: &mut Ui,
     egui: &egui::Context,
-    frame: &mut eframe::Frame,
+    _frame: &mut eframe::Frame,
     open: &mut bool,
     page: &mut Option<Box<dyn IGuiCtx>>,
     settings: &mut TeleTextSettings,
@@ -269,10 +269,14 @@ fn top_menu_bar(
                 ui.close_menu();
             }
 
-            ui.separator();
-            if ui.button("Quit").clicked() {
-                frame.close();
-                ui.close_menu();
+            // Cannot quit via menu on wasm
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                ui.separator();
+                if ui.button("Quit").clicked() {
+                    _frame.close();
+                    ui.close_menu();
+                }
             }
         });
     });

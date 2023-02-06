@@ -315,10 +315,24 @@ impl IGuiCtx for GuiYleTextContext {
 }
 
 impl TelePager for TeleText {
+    #[cfg(not(target_arch = "wasm32"))]
     fn to_full_page(page: &TelePage) -> String {
         // https://yle.fi/tekstitv/txt/100_0001.htm
         format!(
             "https://yle.fi/tekstitv/txt/{}_{:04}.htm",
+            page.page, page.sub_page
+        )
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn to_full_page(page: &TelePage) -> String {
+        // https://yle.fi/tekstitv/txt/100_0001.htm
+        let proxy = env!(
+            "TELETEXT_PROXY_URL",
+            "TELETEXT_PROXY_URL env variable is required for wasm builds"
+        );
+        format!(
+            "{proxy}/?url=https://yle.fi/tekstitv/txt/{}_{:04}.htm",
             page.page, page.sub_page
         )
     }

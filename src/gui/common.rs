@@ -2,11 +2,16 @@ use std::{
     cell::RefCell,
     rc::Rc,
     sync::{Arc, Mutex},
-    thread,
-    time::Duration,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::{thread, time::Duration};
+
 use egui::{self, InputState, Key::*, PointerState};
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsCast;
 
 use crate::parser::{HtmlItem, HtmlLink, HtmlLoader, HtmlParser};
 
@@ -97,23 +102,32 @@ impl TeleHistory {
 }
 
 pub struct GuiWorker {
+    #[cfg(not(target_arch = "wasm32"))]
     running: Arc<Mutex<bool>>,
+    #[cfg(not(target_arch = "wasm32"))]
     timer: Arc<Mutex<u64>>,
     /// How often refresh should happen in seconds
     interval: Arc<Mutex<u64>>,
     should_refresh: Arc<Mutex<bool>>,
+    #[cfg(target_arch = "wasm32")]
+    interval_handle: Option<i32>,
 }
 
 impl GuiWorker {
     pub fn new(interval: u64) -> Self {
         Self {
+            #[cfg(not(target_arch = "wasm32"))]
             running: Arc::new(Mutex::new(false)),
-            should_refresh: Arc::new(Mutex::new(false)),
+            #[cfg(not(target_arch = "wasm32"))]
             timer: Arc::new(Mutex::new(0)),
+            should_refresh: Arc::new(Mutex::new(false)),
             interval: Arc::new(Mutex::new(interval)),
+            #[cfg(target_arch = "wasm32")]
+            interval_handle: None,
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn start(&mut self) {
         *self.running.lock().unwrap() = true;
         let running = self.running.clone();
@@ -140,14 +154,71 @@ impl GuiWorker {
         });
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub fn start(&mut self) {
+        let interval = self.interval.clone();
+        let should_refresh = self.should_refresh.clone();
+
+        tracing::info!("poll start");
+        tracing::info!("POLL! start");
+        let interval_fn = Some(Closure::wrap(Box::new(move || {
+            tracing::info!("poll!");
+            tracing::info!("POLL!");
+            let mut refresh = should_refresh.lock().unwrap();
+            *refresh = true;
+        }) as Box<dyn FnMut()>));
+
+        let handle = web_sys::window()
+            .expect("no global `window` exists")
+            .set_interval_with_callback_and_timeout_and_arguments_0(
+                interval_fn.as_ref().unwrap().as_ref().unchecked_ref(),
+                (*interval.lock().unwrap() as i32) * 1000,
+            )
+            .unwrap();
+        // clone, forget avoids Uncaught Error: closure invoked recursively or after being dropped
+        // https://stackoverflow.com/a/53219594
+        // https://rustwasm.github.io/wasm-bindgen/examples/closures.html
+        // FIXME: fix the memory leak
+        interval_fn.unwrap().forget();
+        self.interval_handle = Some(handle);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn stop(&mut self) {
         *self.timer.lock().unwrap() = 0;
         *self.running.lock().unwrap() = false;
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(interval) = self.interval_handle {
+                web_sys::window()
+                    .expect("no global `window` exists")
+                    .clear_interval_with_handle(interval);
+            }
+            self.interval_handle = None;
+        }
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub fn stop(&mut self) {
+        if let Some(interval) = self.interval_handle {
+            web_sys::window()
+                .expect("no global `window` exists")
+                .clear_interval_with_handle(interval);
+        }
+        self.interval_handle = None;
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn set_interval(&mut self, interval: u64) {
         *self.timer.lock().unwrap() = 0;
         *self.interval.lock().unwrap() = interval;
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn set_interval(&mut self, interval: u64) {
+        *self.interval.lock().unwrap() = interval;
+        self.stop();
+        self.start();
     }
 
     pub fn should_refresh(&self) -> bool {
@@ -222,6 +293,36 @@ impl<T: HtmlParser + TelePager + Send + 'static> GuiContext<T> {
     pub fn from_file(egui: egui::Context, file: &str) -> Self {
         let current_page = TelePage::new(100, 1);
         let pobj = HtmlLoader::new(file);
+        let parser = T::new();
+        let completed = parser.parse(pobj).unwrap();
+
+        Self {
+            egui,
+            current_page,
+            state: Arc::new(Mutex::new(FetchState::Complete(completed))),
+            page_buffer: Vec::with_capacity(3),
+            history: TeleHistory::new(current_page),
+            worker: None,
+            pointer: Default::default(),
+        }
+    }
+
+    /// Helper function to load GuiContext without having to relyi on http request
+    /// Example:
+    /// ```rust
+    /// let page_string = String::from_utf8(include_bytes!("../../100.htm").to_vec()).unwrap();
+    /// let mut page = Box::new(GuiYleTextContext::new(GuiContext::from_string(
+    ///     ctx.egui_ctx.clone(),
+    ///     &page_string,
+    /// ))) as Box<dyn IGuiCtx>;
+    /// let page_ref = &mut page as &mut Box<dyn IGuiCtx>;
+    /// ```
+    #[allow(dead_code)]
+    pub fn from_string(egui: egui::Context, src: &str) -> Self {
+        let current_page = TelePage::new(100, 1);
+        let pobj = HtmlLoader {
+            page_data: src.into(),
+        };
         let parser = T::new();
         let completed = parser.parse(pobj).unwrap();
 
@@ -320,6 +421,7 @@ impl<T: HtmlParser + TelePager + Send + 'static> GuiContext<T> {
             self.history.add(self.current_page)
         }
 
+        #[cfg(not(target_arch = "wasm32"))]
         thread::spawn(move || {
             let is_init = matches!(
                 *state.lock().unwrap(),
@@ -343,13 +445,55 @@ impl<T: HtmlParser + TelePager + Send + 'static> GuiContext<T> {
             *state.lock().unwrap() = new_state;
             ctx.request_repaint();
         });
+
+        #[cfg(target_arch = "wasm32")]
+        wasm_bindgen_futures::spawn_local(async move {
+            let is_init = matches!(
+                *state.lock().unwrap(),
+                FetchState::Init | FetchState::InitFailed
+            );
+
+            *state.lock().unwrap() = FetchState::Fetching;
+            let site = &T::to_full_page(&page);
+            tracing::info!("Load page: {}", site);
+            let fetched = Self::fetch_page(site).await;
+            let new_state = match fetched {
+                Ok(parser) => FetchState::Complete(parser),
+                Err(_) => {
+                    if is_init {
+                        FetchState::InitFailed
+                    } else {
+                        FetchState::Error
+                    }
+                }
+            };
+
+            *state.lock().unwrap() = new_state;
+            ctx.request_repaint();
+        });
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn fetch_page(site: &str) -> Result<T, ()> {
         let body = reqwest::blocking::get(site).map_err(|_| ())?;
         let body = body.text().map_err(|_| ())?;
         let teletext = T::new()
             .parse(HtmlLoader { page_data: body })
+            .map_err(|_| ())?;
+        Ok(teletext)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    async fn fetch_page(site: &str) -> Result<T, ()> {
+        let res = reqwest::Client::new()
+            .get(site)
+            .send()
+            .await
+            .map_err(|_| ())?;
+
+        let text = res.text().await.map_err(|_| ())?;
+        let teletext = T::new()
+            .parse(HtmlLoader { page_data: text })
             .map_err(|_| ())?;
         Ok(teletext)
     }

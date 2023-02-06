@@ -298,10 +298,24 @@ impl IGuiCtx for GuiYleImageContext {
 }
 
 impl TelePager for YleImage {
+    #[cfg(not(target_arch = "wasm32"))]
     fn to_full_page(page: &TelePage) -> String {
         // https://yle.fi/aihe/yle-ttv/json?P=100_0001
         format!(
             "https://yle.fi/aihe/yle-ttv/json?P={}_{:04}",
+            page.page, page.sub_page
+        )
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn to_full_page(page: &TelePage) -> String {
+        // https://yle.fi/aihe/yle-ttv/json?P=100_0001
+        let proxy = env!(
+            "TELETEXT_PROXY_URL",
+            "TELETEXT_PROXY_URL env variable is required for wasm builds"
+        );
+        format!(
+            "{proxy}/?url=https://yle.fi/aihe/yle-ttv/json?P={}_{:04}",
             page.page, page.sub_page
         )
     }

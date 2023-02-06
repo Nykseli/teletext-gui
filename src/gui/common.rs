@@ -159,11 +159,7 @@ impl GuiWorker {
         let interval = self.interval.clone();
         let should_refresh = self.should_refresh.clone();
 
-        tracing::info!("poll start");
-        tracing::info!("POLL! start");
         let interval_fn = Some(Closure::wrap(Box::new(move || {
-            tracing::info!("poll!");
-            tracing::info!("POLL!");
             let mut refresh = should_refresh.lock().unwrap();
             *refresh = true;
         }) as Box<dyn FnMut()>));

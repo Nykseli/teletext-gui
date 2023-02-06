@@ -1,4 +1,5 @@
 /target
+/dist
 
 # html files are genrally random local test files
 *.htm

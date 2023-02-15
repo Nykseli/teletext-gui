@@ -26,7 +26,7 @@ impl<'a> GuiYleText<'a> {
             self.ctx.borrow().current_page.page.to_string()
         };
 
-        format!("P{}", page_num)
+        format!("P{page_num}")
     }
 
     fn draw_header_small(&mut self, title: &HtmlText) {

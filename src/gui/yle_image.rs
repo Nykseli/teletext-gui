@@ -28,7 +28,7 @@ impl<'a> GuiYleImage<'a> {
             self.ctx.borrow().current_page.page.to_string()
         };
 
-        format!("P{}", page_num)
+        format!("P{page_num}")
     }
 
     fn draw_header_small(&mut self, title: &HtmlText) {
@@ -54,7 +54,7 @@ impl<'a> GuiYleImage<'a> {
         let nav_start = (self.panel_width / 2.0) - (nav_length / 2.0);
         let page_len = chw * 4.0;
         let time_len = chw * 15.0;
-        let title = format!("{} YLE TEKSTI-TV", title);
+        let title = format!("{title} YLE TEKSTI-TV");
         let title_len = (title.chars().count() as f32) * chw;
 
         let title_space = (nav_length / 2.0) - (title_len / 2.0) - page_len;

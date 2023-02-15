@@ -166,9 +166,9 @@ pub trait HtmlParser {
     {
         // TODO: Do we need to heap allocate a new string here?
         let html_tag = if closing {
-            format!("</{}", tag)
+            format!("</{tag}")
         } else {
-            format!("<{}", tag)
+            format!("<{tag}")
         };
 
         // First skip the start of the tag definition

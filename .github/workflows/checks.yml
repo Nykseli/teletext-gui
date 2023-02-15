@@ -10,6 +10,8 @@ env:
   # https://rustwasm.github.io/wasm-bindgen/api/web_sys/struct.Clipboard.html
   # https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html
   RUSTFLAGS: --cfg=web_sys_unstable_apis
+  # TELETEXT_PROXY_URL is required for wasm builds but for checks, it doesn't need to be valid url
+  TELETEXT_PROXY_URL: "localhost"
 
 jobs:
   check:
@@ -41,7 +43,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: check
-          args: --all-features --lib --target wasm32-unknown-unknown
+          args: --all-features --target wasm32-unknown-unknown
 
   # TODO: tests
   # test:

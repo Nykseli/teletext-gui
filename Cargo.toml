@@ -22,7 +22,7 @@ eframe = { git = "https://github.com/Nykseli/egui", default-features = false, fe
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
     "persistence",   # Enable restoring app state when restarting the app.
 ] }
-egui_extras = { git = "https://github.com/Nykseli/egui", features = ["image"] }
+egui_extras = { git = "https://github.com/Nykseli/egui", features = ["image", "svg"] }
 image = { version = "0.24", default-features = false, features = ["png"] }
 
 # You only need serde if you want app persistence:

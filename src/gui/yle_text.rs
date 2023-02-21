@@ -1,9 +1,12 @@
 use std::{cell::RefCell, ops::Deref, rc::Rc};
 
 use crate::parser::{HtmlItem, HtmlLink, HtmlText, TeleText, MIDDLE_TEXT_MAX_LEN};
-use egui::{FontId, InputState, RichText, TextStyle};
+use egui::{InputState, TextStyle};
 
-use super::common::{FetchState, GuiContext, IGuiCtx, PageDraw, TelePage, TelePager};
+use super::{
+    common::{FetchState, GuiContext, IGuiCtx, PageDraw, TelePage, TelePager},
+    svg_icon::{IconName, SvgIcon},
+};
 
 pub struct GuiYleText<'a> {
     ui: &'a mut egui::Ui,
@@ -91,22 +94,22 @@ impl<'a> GuiYleText<'a> {
             ui.add_space(page_nav_start);
             for (idx, item) in navigation.iter().enumerate() {
                 let icon = match idx {
-                    0 => "←",
-                    1 => "↑",
-                    2 => "↓",
-                    3 => "→",
-                    _ => "?",
+                    0 => IconName::ArrowLeft,
+                    1 => IconName::ArrowUp,
+                    2 => IconName::ArrowDown,
+                    3 => IconName::ArrowRight,
+                    _ => unreachable!(), // TODO: generic "error" icon
                 };
 
-                let icon_text = RichText::new(icon).font(FontId::monospace(body_font.size));
+                let icon = SvgIcon::from_icon(icon, arrow_width);
                 match item {
                     HtmlItem::Link(link) => {
-                        if ui.link(icon_text).clicked() {
+                        if ui.add(icon.into_link()).clicked() {
                             ctx.borrow_mut().load_page(&link.url, true);
                         };
                     }
                     HtmlItem::Text(_) => {
-                        ui.label(icon_text);
+                        ui.add(icon);
                     }
                 }
 

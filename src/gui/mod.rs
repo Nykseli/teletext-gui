@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 mod common;
+mod svg_icon;
 mod yle_image;
 mod yle_text;
 use egui::{Color32, FontFamily, FontId, Style, TextStyle, Ui};

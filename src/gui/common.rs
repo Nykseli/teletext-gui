@@ -471,11 +471,20 @@ impl<T: HtmlParser + TelePager + Send + 'static> GuiContext<T> {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn fetch_page(site: &str) -> Result<T, ()> {
-        let body = reqwest::blocking::get(site).map_err(|_| ())?;
-        let body = body.text().map_err(|_| ())?;
-        let teletext = T::new()
-            .parse(HtmlLoader { page_data: body })
-            .map_err(|_| ())?;
+        use reqwest::header::{HeaderMap, HeaderValue};
+
+        // let body = reqwest::blocking::get(site).unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert("user-agent", HeaderValue::from_static("curl/7.81.0"));
+        let body = reqwest::blocking::Client::builder()
+            .default_headers(headers)
+            .build()
+            .unwrap()
+            .get(site)
+            .send()
+            .unwrap();
+        let body = body.text().unwrap();
+        let teletext = T::new().parse(HtmlLoader { page_data: body }).unwrap();
         Ok(teletext)
     }
 
